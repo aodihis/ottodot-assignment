@@ -28,7 +28,7 @@ Every non-trivial task starts with planning, before any code is written.
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run migrate -- --name <name>` — create and apply a Prisma migration
 - `npm run seed` — reseed the dev database
-- `npm run reset` — drop, migrate, and reseed the dev database (Prisma blocks this when it detects an AI agent; it needs `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION` set to the user's consent text)
+- `npm run reset` — drop, migrate, and reseed the dev database. Prisma refuses this when an agent runs it: ask the user to run it (applying a migration with `npm run migrate` is not blocked)
 - Lint: not configured yet.
 </commands>
 
