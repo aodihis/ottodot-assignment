@@ -3,8 +3,8 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 <scope>
-- New repository — the stack is intentionally not chosen yet.
-- The stack (language, framework, libraries, tooling) is concluded during the first detailed plan and recorded there. Once chosen, keep `<commands>` below current with the real build/lint/test commands.
+- Stack (concluded 2026-09-28, recorded per phase in `.claude/plan/*.md`): TypeScript on Node 20+ · Hono · Prisma 7 + SQLite (better-sqlite3 driver adapter) · zod · hash-wasm argon2id · Svelte 5 + Vite SPA (Phase 3) · Vitest.
+- Keep `<commands>` below current with the real build/lint/test commands.
 - Style modeled on ChrisTitusTech/titus-ai `AGENTS.md`: short, imperative rules. Keep it that way.
 </scope>
 
@@ -21,16 +21,24 @@ Every non-trivial task starts with planning, before any code is written.
 </plan-workflow>
 
 <commands>
-- None yet — the repo is empty. Fill this section when the stack is concluded in the first detailed plan (build, lint, test, run, single-test invocation).
+- `npm install` — install everything (npm workspaces: root + `api/`)
+- `npm run dev` — run the API on http://localhost:3000
+- `npm test` — the whole Vitest suite (`tests/unit`, `tests/integration`)
+- `npm test -- tests/integration/auth.test.ts` — one test file (paths are relative to `api/`)
+- `npm run typecheck` — `tsc --noEmit`
+- `npm run migrate -- --name <name>` — create and apply a Prisma migration
+- `npm run seed` — reseed the dev database
+- `npm run reset` — drop, migrate, and reseed the dev database (Prisma blocks this when it detects an AI agent; it needs `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION` set to the user's consent text)
+- Lint: not configured yet.
 </commands>
 
 <coding-guidelines>
 - Stupid-simple beats clever. Write the simplest code that works; complexity must justify itself.
 - Never invent what a proven library provides. Example: use Prisma, do not hand-roll an ORM.
 - Naming, casing, and file layout follow the conventions of the chosen framework — not personal taste.
-- Organize code by domain (domain-oriented architecture). Abstract to keep domain boundaries clean, not speculatively.
-- Logic meant to be used across domains goes in `helpers/` or `utils/` for reusability (e.g., hash generate/verify functions), not inside one domain's code.
-- All tests live outside `src/`, under `tests/`: `tests/unit`, `tests/integration`.
+- Organize code by module (domain-oriented): `api/src/modules/<module>/`. Each module has `<module>.routes.ts` (HTTP only — parse, call, respond) and `<module>.service.ts` (the logic).
+- Logic meant to be used across modules goes in `helpers/` for reusability (e.g., hash generate/verify, the "this parent's non-removed children" filter), not inside one module.
+- Tests live in the workspace they belong to, outside `src/`: `api/tests/unit`, `api/tests/integration` (the web app gets its own tests later).
 - Every function and every flow gets test cases. A function without a test is not done.
 </coding-guidelines>
 

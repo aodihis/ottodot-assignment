@@ -16,6 +16,15 @@ coverage/
 *.log
 .cache/
 
+# local databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# generated Prisma client (rebuilt by `prisma generate` on install)
+api/src/generated/
+
 # OS
 .DS_Store
 Thumbs.db

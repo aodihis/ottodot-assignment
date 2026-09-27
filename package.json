@@ -1,0 +1,29 @@
+{
+  "name": "ottodot-trial-booking",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "api"
+  ],
+  "scripts": {
+    "dev": "npm --workspace api run dev",
+    "reset": "npm --workspace api run reset",
+    "seed": "npm --workspace api run seed",
+    "migrate": "npm --workspace api run migrate",
+    "generate": "npm --workspace api run generate",
+    "test": "npm --workspace api run test",
+    "test:watch": "npm --workspace api run test:watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "prisma@7.10.0": true,
+    "@prisma/client@7.10.0": true,
+    "@prisma/engines@7.10.0": true,
+    "better-sqlite3@12.11.1": true
+  }
+}

@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum Role {
+  parent
+  admin
+}
+
+enum BookingStatus {
+  pending_payment
+  confirmed
+  payment_failed
+  cancelled
+}
+
+enum CancelledReason {
+  expired
+  seat_taken
+  duplicate_booking
+  parent_cancelled
+}
+
+enum PaymentOutcome {
+  success
+  failure
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(parent)
+  createdAt    DateTime @default(now())
+  parent       Parent?
+}
+
+model Parent {
+  id       String    @id @default(cuid())
+  userId   String    @unique
+  user     User      @relation(fields: [userId], references: [id])
+  students Student[]
+}
+
+model Student {
+  id        String    @id @default(cuid())
+  name      String
+  parentId  String
+  removedAt DateTime?
+  parent    Parent    @relation(fields: [parentId], references: [id])
+  bookings  Booking[]
+}
+
+model TrialClass {
+  id             String    @id @default(cuid())
+  title          String
+  subject        String
+  startsAt       DateTime
+  durationMin    Int       @default(60)
+  capacity       Int       @default(4)
+  confirmedCount Int       @default(0)
+  priceCents     Int       @default(5000)
+  bookings       Booking[]
+}
+
+model Booking {
+  id              String           @id @default(cuid())
+  studentId       String
+  classId         String
+  status          BookingStatus    @default(pending_payment)
+  expiresAt       DateTime
+  priceCents      Int
+  cancelledReason CancelledReason?
+  confirmedAt     DateTime?
+  refundedAt      DateTime?
+  refundCents     Int?
+  createdAt       DateTime         @default(now())
+  student         Student          @relation(fields: [studentId], references: [id])
+  trialClass      TrialClass       @relation(fields: [classId], references: [id])
+  attempts        PaymentAttempt[]
+
+  @@index([classId, status])
+  @@index([studentId, status])
+}
+
+model PaymentAttempt {
+  id          String         @id @default(cuid())
+  bookingId   String
+  outcome     PaymentOutcome
+  reason      String?
+  amountCents Int
+  createdAt   DateTime       @default(now())
+  booking     Booking        @relation(fields: [bookingId], references: [id])
+}
