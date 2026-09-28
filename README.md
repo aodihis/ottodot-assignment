@@ -264,8 +264,6 @@ Every decision above bought something and cost something. The costs:
 | **One class per order, all-or-nothing** | the atomic claim is one test rather than a per-class map, and a failure needs no compensating writes | a parent who wants one child out of a two-child order must cancel and rebook |
 | **Decimals for money** | values are legible when reading the database by hand | the 2-decimal rule is enforced in code because SQLite takes no `(10,2)`, and JSON drops trailing zeros, so `50.00` arrives as `50` |
 | **UTC everywhere, durations not calendar days** | no DST or timezone edge cases at all | "5 days before the class" ignores business calendars, so holidays and teaching weeks are not modelled |
-| **Routes declare their own OpenAPI** | the reference cannot drift from the code, and response shapes are compiler-checked | a larger diff across four route modules than annotating them would have been |
-| **No router or state library in the SPA** | four screens and one store do not justify either | Back and refresh rest on a hand-rolled hash route, which is code to own |
 
 ### Two deployables
 
@@ -321,11 +319,6 @@ credentials plus `SameSite=None` and `Secure`.
    read most likely to degrade first.
 7. **5xx and 401/403 rates by route.** A `FORBIDDEN` spike usually means the frontend is
    asking for something the session cannot do.
-
-Most of the above needs something this build does not have, which is structured request
-logs with a request id so one booking can be followed across the calls that touched it.
-Until that exists, a race can only be inferred from counters rather than read from a log,
-which is why it is the first item under "next".
 
 ## What I would do next with more time
 

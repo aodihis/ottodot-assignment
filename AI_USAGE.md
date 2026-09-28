@@ -6,16 +6,6 @@ Written to be useful rather than flattering, so the corrections get the most spa
 ## Which tools
 
 **Claude Code** (Anthropic's CLI) as the only AI tool, driving the whole build.
-Planning, schema and migrations, services and routes, tests, the SPA, the stylesheet,
-and these documents.
-
-Process did more of the work than tooling did. `CLAUDE.md` in the repo carries the
-conventions the agent follows: a plan in `.claude/plan/` before any non-trivial work,
-modules split into `<module>.routes.ts` for HTTP and `<module>.service.ts` for the
-logic, a test for every function, and a rule against fabricating a path, a command
-output or a test result. The plans are in the repository unedited, including the risks
-they got wrong. Corrections were written back as durable rules rather than left as
-one-off instructions, so the same mistake did not return in the next phase.
 
 ## What AI was used for
 
@@ -35,23 +25,44 @@ one-off instructions, so the same mistake did not return in the next phase.
 
 ## One place AI clearly moved faster
 
-**Converting the four route modules to declare their own OpenAPI.** Fifteen response
-schemas across `auth`, `students`, `classes` and `bookings`, plus the shared envelope
-and class-view schemas, is mechanical, high-volume work with little judgement in it.
-That is exactly the shape AI is good at.
+**Writing code and implementing the logic.** Not the planning and not the review, but the
+part in the middle, where a decision has to become working code.
 
-What made it worth doing was that it was not only documentation. Declaring the responses
-made the compiler check them, so a handler whose return stops matching its documented
-response now fails `npm run typecheck`. One pass produced the browsable reference at
-`/scalar`, the document at `/doc`, and a new class of compile-time error. Human review
-could then be spent on the three decisions inside it, which were which statuses the pay
-route can return, whether `/scalar` should be public, and how a malformed body should be
-reported, rather than on the transcription.
+There are four reasons, and all four are friction I would otherwise pay for myself.
 
-A close second, in the frontend phase, was the Svelte 5 test harness. Vitest resolves
-Svelte's *server* build unless `resolve.conditions: ['browser']` is set, and `mount()`
-then throws with an error that names nothing relevant. That is a 15-minute dead end by
-hand and a one-line fix when you already know the answer.
+**Reading the documentation.** Using a library normally means finding the right API, the
+right option and the right idiom before writing a line. The AI usually already knows it,
+so that stops being a prerequisite rather than a step. You still check the result, but you
+no longer have to read your way to it. The Svelte test harness is the clearest example.
+Vitest resolves Svelte's *server* build unless `resolve.conditions: ['browser']` is set,
+and without that line `mount()` throws an error that names nothing relevant. That is a
+15-minute dead end if you have to find it in the documentation, and a one-line fix if you
+already know it.
+
+**Hesitation.** When I implement logic I hold several scenarios in my head at once, and
+choosing between them is a real cost. The AI does not hesitate. It picks a path, writes
+it, and moves on. That is faster, and it is also why the review matters more rather than
+less, because a confident wrong choice looks exactly like a confident right one.
+
+**Naming.** Naming variables and functions blocks me more often than it should. The AI
+produces a name and carries on.
+
+**Reading a large codebase.** Following one function that calls into several files takes me
+time, mostly to work out which files are even involved. The AI does that quickly, and can
+write the explanation down as it goes. That is why the comments in this repo describe
+intent rather than restating the code.
+
+The result is a shift rather than a straight saving. What is left for me is reading the
+generated code and judging it, so judgement moves to the two ends of the work. It goes
+into the plan, where the approach is agreed before anything is written, and into the
+review, where the result is checked. The middle is where the time goes away.
+
+The best illustration here is the OpenAPI conversion, because it needed all four. Fifteen
+response schemas across four route modules is mechanical, high-volume work with little
+judgement in it. It required knowing the library, it touched four files that had to be
+read, and it involved a great many small naming and shape decisions. One pass produced the
+browsable reference at `/scalar`, the document at `/doc`, and a new class of compile-time
+error, because declaring the responses made the compiler check them.
 
 ## Where I disagreed with, corrected, or rejected AI output
 
