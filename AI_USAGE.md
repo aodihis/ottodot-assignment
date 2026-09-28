@@ -190,21 +190,40 @@ and the `npm start` script.
 
 ## How I verified the final implementation
 
-I read the important generated code rather than all of it. A bug that throws gets found
-immediately, while a bug that writes the wrong row does not, so the reading went to the
-schema and the migrations, and to the payment transaction where the race lives. Everything
-else is held by the compiler and the tests. From that reading, `prisma migrate diff`
-reports no difference, the constraints were proved by making them bite (a raw
-over-capacity update is rejected by the `CHECK`, a raw duplicate enrollment throws), and
-`EXPLAIN QUERY PLAN` shows the new index being used rather than a scan.
+### Read the important generated code, not all of it
 
-The generated tests I reviewed rather than trusted, since reading them is fast and the
-failure mode is a test that passes while asserting the wrong thing. The ones that matter
-try to break an invariant, which here is the last-seat race looped five times with one
-winner each run and a loser that is never charged, a declined card that registers nobody,
-and the two constraint violations above. 214 tests run in total, 157 against the API and 57
-against the SPA. Then I ran it and clicked it, which is the smallest check and catches what
-a test cannot, such as a screen that renders but cannot be used. For the API, the same
-surface by hand is `/scalar`, and I also drove the whole flow over HTTP against a copy of
-the database rather than the seeded one. The visuals were checked by hand, because there is
-no browser automation in this environment.
+You cannot review everything an AI writes, and skimming all of it catches nothing. The
+parts worth reading are the ones where a mistake stays quiet. A bug that throws gets found
+immediately, while a bug that writes the wrong row does not. So the reading went to the
+schema and the migrations, because a wrong constraint or a missing index is invisible at
+runtime, and to the business logic where the concurrency lives, which is the payment
+transaction and the seat helper behind it.
+
+What that produced, as checks rather than opinions. `prisma migrate diff` reports no
+difference, so the hand-written SQL still matches what Prisma expects. The constraints were
+proved by making them bite, since a raw over-capacity update is rejected by the `CHECK` and
+a raw duplicate enrollment throws. `EXPLAIN QUERY PLAN` shows the new index being used
+rather than a scan. Everything else is held by the compiler and the tests.
+
+### Review the suite, rather than trusting it or writing it
+
+Reading a generated suite is fast where writing one is not, and reading is where the value
+is. The failure mode to watch for is a test that passes while asserting the wrong thing, so
+the check was whether the important cases are actually asserted. Those are the ones trying
+to break an invariant.
+
+Here that means the last-seat race looped five times with one winner each run and a loser
+that is never charged, a declined card that registers nobody, and the two constraint
+violations above. 214 tests in total, 157 against the API and 57 against the SPA, with the
+API tests running against a real database rebuilt from the migrations on every run.
+
+### Run it, and click it
+
+The smallest check and often the one that finds the most. Clicking through the four seeded
+cases is the only check that catches a screen which renders but cannot be used, and for the
+API the same surface by hand is `/scalar`, which is generated from the route definitions and
+so cannot describe an endpoint that does not exist.
+
+I also drove the whole flow over HTTP, against a copy of the database rather than the seeded
+one, since that is repeatable. The visuals were checked by hand, because there is no browser
+automation in this environment.
