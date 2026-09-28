@@ -21,7 +21,7 @@ async function main() {
 
     console.log(
       bookings === 0
-        ? 'Nothing to retire — no lapsed selections.'
+        ? 'Nothing to retire, no lapsed selections.'
         : `Retired ${bookings} lapsed selection(s). Availability is unchanged: ` +
             'a selection never held a seat.',
     );
