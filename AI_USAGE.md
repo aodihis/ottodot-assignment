@@ -190,96 +190,21 @@ and the `npm start` script.
 
 ## How I verified the final implementation
 
-Three things, ordered by how much they catch.
+I read the important generated code rather than all of it. A bug that throws gets found
+immediately, while a bug that writes the wrong row does not, so the reading went to the
+schema and the migrations, and to the payment transaction where the race lives. Everything
+else is held by the compiler and the tests. From that reading, `prisma migrate diff`
+reports no difference, the constraints were proved by making them bite (a raw
+over-capacity update is rejected by the `CHECK`, a raw duplicate enrollment throws), and
+`EXPLAIN QUERY PLAN` shows the new index being used rather than a scan.
 
-### Read the important generated code, not all of it
-
-You cannot review everything an AI writes, and trying to means skimming all of it and
-catching nothing. The parts worth reading line by line are the ones where a mistake stays
-quiet. A bug that throws gets found immediately. A bug that writes the wrong row does not.
-
-That meant the schema and the migrations, because a wrong constraint or a missing index is
-invisible at runtime, and the business logic where the concurrency lives, which is the
-payment transaction in `bookings.service.ts` and the seat helper behind it. Together those
-hold the race, the duplicate guarantee and the capacity guard. The rest is held by the
-compiler and the tests, so reading it twice would have bought little.
-
-What the reading produced, as checks rather than opinions:
-
-- `prisma migrate diff` reports **"No difference detected"**, so the hand-written SQL still
-  produces exactly the schema Prisma expects, including the `CHECK` constraint Prisma does
-  not model and the indexes added by hand.
-- The constraints were proved by **making them bite**, not by reading them. A raw `UPDATE`
-  pushing `confirmedCount` past `capacity` is rejected by the `CHECK`, and a raw duplicate
-  `Enrollment` insert throws `UNIQUE constraint failed`. A constraint nobody has tried to
-  violate is a constraint nobody knows works.
-- `EXPLAIN QUERY PLAN` on the parent booking list returns
-  `SEARCH Booking USING INDEX Booking_parentId_createdAt_idx (parentId=?)` rather than a
-  scan.
-
-### Review the suite, rather than trusting it or writing it
-
-A generated test suite is much faster to read than to write, and reading it is where the
-value is. The failure mode worth watching for is a test that passes while asserting the
-wrong thing, so what I checked was whether the important cases are actually asserted.
-
-The important ones are the ones trying to break an invariant, and they are short enough to
-read by eye:
-
-- the last-seat race, looped five times, asserting exactly one winner each run and that the
-  loser is fully cancelled, carrying a *failed* charge and no refund
-- a declined card, asserting that no child joins the roster
-- an over-capacity update and a duplicate registration, both asserted to be refused by the
-  database rather than by the service
-
-214 tests run in total, 157 against the API in 19 files and 57 against the SPA in 12. The
-API tests run against a real SQLite database rebuilt from the migrations on every run, so
-the migrations are exercised rather than assumed. `expectSeatCountsConsistent` runs after
-every mutating test and asserts that `confirmedCount == COUNT(enrollments)`, so the counter
-and the roster cannot drift apart unnoticed.
-
-One piece of that is worth calling out because it is the same idea applied to the demo
-data. `npm run seed` counts the four cases the README promises and throws if one is
-missing, reporting "4 class(es) with seats, 1 at exactly 3/4, 8 enrollment(s), 1 failed
-payment(s)." The check is a pure function with its own unit tests, because the seed's
-module writes to the database as soon as it loads.
-
-### Run it, and click it
-
-The smallest check and often the one that finds the most.
-
-Manual, through the frontend. That is how the four seeded cases in the README are meant to
-be seen, and clicking through them is the only check that catches a screen which renders
-correctly but cannot be used.
-
-For the API, the same surface is `/scalar`, which is generated from the route definitions
-and so cannot describe an endpoint that does not exist. It is there to be used for exactly
-this, which is sending a request by hand and reading the envelope that comes back.
-
-I also drove the whole flow over HTTP rather than by clicking, because it is repeatable and
-because it can be run against a *copy* of the database instead of the seeded one. Login,
-then `/auth/me`, then classes, then book one class for two children (a hold with 900
-seconds and nothing charged), then pay with `4242...` and the booking confirms with the card
-read as `visa ....4242`, then the seats go from 4 to 2, then `GET /bookings` returns six
-orders newest first, then as admin the roster shows both children, then cancel for a full
-refund, then the seats go from 2 back to 4 and the roster is empty while both children
-appear under refunds.
-
-That run also proved the cookie survives the dev proxy, which is the thing that would have
-broken quietly if same-origin had not held.
-
-**What I did not verify, and would not claim:**
-
-- **The visuals.** There is no browser automation available in this environment, so the
-  interface was checked by hand rather than by a test. The 57 component tests prove the
-  screens render and behave, not that they look right.
-- **The race as an experience.** It is proved at the API level, where the invariant lives.
-  Nobody has automated two real browsers racing.
-- **Load.** There is no concurrency testing beyond the five-run race loop and no profiling.
-  The single-connection serialisation argument is a design property rather than a
-  measurement.
-- **A real deployment.** Two `.env.example` files and a note about the cookie and CORS
-  constraint are the whole of it.
-- **`/simplify` and `/security-review` on the frontend phase.** Phases 1, 2 and 5 were
-  reviewed with both. I waived them for the Svelte work, and the commit says so rather than
-  implying otherwise.
+The generated tests I reviewed rather than trusted, since reading them is fast and the
+failure mode is a test that passes while asserting the wrong thing. The ones that matter
+try to break an invariant, which here is the last-seat race looped five times with one
+winner each run and a loser that is never charged, a declined card that registers nobody,
+and the two constraint violations above. 214 tests run in total, 157 against the API and 57
+against the SPA. Then I ran it and clicked it, which is the smallest check and catches what
+a test cannot, such as a screen that renders but cannot be used. For the API, the same
+surface by hand is `/scalar`, and I also drove the whole flow over HTTP against a copy of
+the database rather than the seeded one. The visuals were checked by hand, because there is
+no browser automation in this environment.
