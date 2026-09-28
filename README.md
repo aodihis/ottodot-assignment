@@ -469,20 +469,24 @@ In the order I would actually do them:
 
 ## Time spent
 
-**Just under four hours** of wall-clock time, start to finish: the first commit is
-at **05:23** and the last at **09:23** (UTC+7), so roughly **4 hours**, including
-planning, implementation, tests and this write-up.
+**About 4 hours** of wall-clock time, start to finish — measured between the first
+commit and the last, both of which are in this repository:
 
-Measured as the span between the first and last commit, so it counts everything
-worked in between but cannot separate reading and thinking from typing. It covers
-all five phases:
+| | |
+|---|---|
+| First commit (`ed9143b`, the planning setup) | 2026-09-28 **05:23** |
+| Last commit (`Phase 4: the write-up`) | 2026-09-28 **09:26** |
+| Span, UTC+7 | **4 h 3 m** |
+
+Measured commit-to-commit, so it counts everything worked in between but cannot
+separate reading and thinking from typing. It covers all five phases:
 
 | Phase | What |
 |---|---|
 | 1 | Auth, children, class reads, the schema and the first migrations |
 | 2 | Booking orders, soft holds, mock payment, enrolments, cancel/refund |
 | 3 | The Svelte SPA, and the parent booking list endpoint |
-| 4 | This write-up |
+| 4 | This write-up, and `AI_USAGE.md` |
 | 5 | The OpenAPI document and the browsable reference |
 
 The single biggest cost was not any one feature but the ordering question — which
