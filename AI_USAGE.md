@@ -1,0 +1,295 @@
+# AI usage
+
+How this was built with AI, where the AI was wrong, and how the result was
+verified. Written to be useful rather than flattering — the corrections are the
+interesting part, so they get the most space.
+
+## Which tools
+
+**Claude Code** (Anthropic's CLI) as the only AI tool, driving the whole build:
+planning, schema and migrations, services and routes, tests, the SPA, the
+stylesheet, and these documents.
+
+Process, not tooling, did most of the work. `CLAUDE.md` in the repo carries the
+conventions the agent follows — a plan in `.claude/plan/` before any non-trivial
+work, modules split into `<module>.routes.ts` (HTTP only) and `<module>.service.ts`
+(the logic), a test for every function, and "never fabricate a path, a command
+output, or a test result". The plans are in the repository, unedited, including
+the risks they got wrong. Corrections I made along the way were written back as
+durable rules rather than left as one-off instructions, so the same mistake did not
+come back in the next phase.
+
+## What AI was used for
+
+- **Planning.** Breaking the brief into five phases with user stories, then a
+  detailed plan per phase: contract first, data model first, then the file-level
+  steps and how each would be verified.
+- **Implementation.** The Prisma schema, the hand-written migrations (including the
+  constraints Prisma cannot express), the services and routes, the Svelte SPA, and
+  the stylesheet.
+- **Tests.** 214 of them, including the ones that specifically try to break the
+  invariants — two payments racing for the last seat, an over-capacity update, a
+  duplicate registration.
+- **Review.** A red-team pass over the booking design in Phase 2 (13 findings,
+  accepted and folded in), and the repo's `/simplify` and `/security-review` on
+  Phases 1, 2 and 5.
+- **Documentation.** These files, and the commit messages.
+
+## One place AI clearly moved faster
+
+**Converting the four route modules to declare their own OpenAPI.** Fifteen
+response schemas across `auth`, `students`, `classes` and `bookings`, plus the
+shared envelope and class-view schemas, is mechanical, high-volume work with little
+judgement in it — exactly the shape AI is good at.
+
+What made it worth doing was that it was not just documentation. Declaring the
+responses made the compiler check them: a handler whose return stops matching its
+documented response now fails `npm run typecheck`. So the same pass produced the
+browsable reference at `/scalar`, the document at `/doc`, and a new class of
+compile-time error — and the human review could then be spent on the three
+decisions inside it (which statuses the pay route can return, whether `/scalar`
+should be public, and how a malformed body should be reported) rather than on the
+transcription.
+
+A close second, in the frontend phase: the Svelte 5 test harness. Vitest resolves
+Svelte's *server* build unless `resolve.conditions: ['browser']` is set, and
+`mount()` then throws with an error that names nothing relevant. That is a
+15-minute dead end by hand and a one-line fix when you already know the answer.
+
+## Where I disagreed with, corrected, or rejected AI output
+
+These are recorded because they are the honest picture. Several came from me, not
+from the AI, and the AI had to be corrected rather than the other way round.
+
+### 1. The booking design: `BookingGroup` rejected for order + line items
+
+The most consequential one, and the one I would point at first.
+
+**AI proposed** `BookingGroup` — the record that holds one payment, one timer and
+several children's seats — and defended it as more precise than "booking", since a
+booking already meant one child's seat.
+
+**I rejected it**, in the planning session: *"DOn't make the name booking group
+just booking for endpoint, it easier for user to understand"*, and asked for the
+commerce pattern instead: **`Booking` + `BookingItem`**.
+
+The naming was not the point, and the AI was wrong in a way that mattered. Once the
+model was an *order with line items*, whole rules stopped being rules I had to
+remember and became consequences:
+
+- all-or-nothing is what an order *is*, so nothing per-child needed its own status;
+- one payment per order is natural, so `Payment` hangs off `Booking`;
+- the group race — two children, one seat left — is just an order that does not fit;
+- a refund is `amount × cancelled lines`, which is arithmetic rather than policy.
+
+It also removed a class of bug outright. `BookingItem` originally carried its own
+`status`, mirroring the order's. That mirror had **six** write sites (pay, cancel,
+sweep, and each of their failure paths) and no invariant keeping it honest, so it
+was deleted; the order carries the state and the line records what was bought.
+
+**The lesson:** when AI reaches for a precise invented name, the model underneath
+is often the thing to question. "BookingGroup" was a compound built to describe a
+record the AI had already designed wrongly.
+
+### 2. Money: integer cents rejected for decimals
+
+**AI designed** `priceCents` / `amountCents` integers — the standard advice, and
+defensible.
+
+**I rejected it**: *"for the prices, don't add cents, just price, amount,
+refundAmount, and make it decimal, I feel it is easier for debugging later, and the
+price won't have a very small cents amount, and limit it to two decimal points."*
+
+The reasoning is about who reads the data. I debug by reading values in a SQLite
+client, where `50.00` is legible and `5000` needs mental arithmetic, and this
+product has no sub-cent prices. The migration had to convert every money column
+with `/ 100.0` — a real cost, paid once.
+
+One thing the AI was right to flag afterwards, and I would have missed: JSON
+numbers drop trailing zeros, so `50.00` reaches the client as `50`. The API is
+honest about that (the README says money is a JSON number) rather than pretending
+the format survives the boundary.
+
+### 3. Datetimes: local time rejected for always-UTC
+
+**I corrected** the AI's default here before it could ship: *"the datetime should
+always be in utc 0, regarless the server timezone. so probably you need a helper
+to save the datetime. if needed."*
+
+The AI's follow-up was the useful part. It pointed out where the risk actually
+lives — not in the column type, which stores an absolute instant regardless, but in
+*parsing*, where `new Date('2026-10-06 10:00')` is silently interpreted as local
+time. So the helper rejects offset-less strings rather than accepting them, and the
+tests assert responses carry a `Z`.
+
+### 4. The roster: derived from booking items rejected for an explicit `Enrollment`
+
+**AI's first design** derived a class's roster from *confirmed booking-item rows* —
+a commercial fact about an order, filtered by a status predicate, backed by a
+partial unique index `WHERE status = 'confirmed'`.
+
+**I corrected it**: a student should relate to a class *directly*, written when the
+booking completes, so "which classes is this child registered for?" is answerable.
+
+The change replaced a predicate with a plain `UNIQUE(studentId, classId)` and made
+the duplicate guarantee *stronger* — it no longer depends on a status value being
+correct. It also deleted six mirror writes and the partial index that had to be
+painstakingly re-appended in a later migration. I would not have found this by
+reading the code; it came from asking what the product needs to know.
+
+### 5. One-port serving: built, verified, then rejected
+
+**AI designed and built** the API serving the built SPA itself, so one command ran
+the whole demo. It worked — `/`, assets, and an SPA fallback were all verified
+running against the real build, and the API routes correctly kept winning.
+
+**I rejected the deployment shape**: *"in production, I don't want do that, we will
+do in different container probably."* It was removed, along with the four lines that
+mounted it and the `npm start` script.
+
+Wasted work, and worth naming as such. The AI verified it thoroughly *before*
+asking whether it was wanted — the question belonged in the plan, not after the
+implementation. What survived is the reasoning: the SPA and the API meet only at
+the dev proxy, and that is what keeps requests same-origin, which is why there is no
+CORS middleware and the cookie is `SameSite=Lax`. That constraint is now recorded
+in `CLAUDE.md` for whoever deploys it.
+
+### 6. Claims written down and never checked
+
+The Phase 3 plan asserted `concurrently` was in the stack table. It was not
+installed, and had never been — root `devDependencies` were `@types/node` and
+`typescript`. The AI had been repeating its own earlier summary as fact.
+
+This one is a good argument for the workflow rather than against it: the fix was
+one `git status`-level check, and it was caught because the plan said "verify" for
+that step. But it is a warning about how confidently a summary can become a
+requirement.
+
+### 7. Fabricated APIs, wrong walkthroughs, and my own mistakes
+
+Smaller, but the pattern is worth recording — **all four of these were mine, caught
+by the AI or by running the thing:**
+
+- **An invented function.** The payment screen once called
+  `bookings.holdMinutesFromNow()`, which did not exist and never had. Caught while
+  writing the file, before it ran.
+- **A walkthrough that would have shown the wrong error.** I wrote a README step
+  promising a "not enough seats" refusal when the seeded data would actually have
+  produced `DUPLICATE_ACTIVE_BOOKING`, because Alya already held a seat in that
+  class. Fixed by reading the real enrolments *and* the check order in the service
+  (`bookings.service.ts:217` for duplicates, `:228` for capacity).
+- **A misdiagnosis, twice.** `prisma migrate` failed with `database is locked`. The
+  AI blamed stdin, then invented a "concurrent session". The real cause was its own
+  `prisma migrate dev` process, orphaned earlier by a stop that killed the wrapper
+  and not the child. The lesson is narrow and real: when a tool reports a lock, find
+  the holder rather than reasoning about who might hold it.
+- **`Location.addEventListener` does not exist** — it is on `window`. `svelte-check`
+  caught it; the app would have thrown at startup.
+- **A test helper that recorded the wrong thing.** Two tests asserted against
+  `undefined` because the `Call` record omitted the `init` field it was tested
+  through. Passing tests for the wrong reason, caught by running them.
+
+### 8. Where the AI was right and I changed my mind
+
+For balance: the red-team pass over the booking design found 13 real findings in
+Phase 2 and all were accepted — including that the losing side of a race should
+carry the *failed* charge in its response, so "you were not charged" is visible
+rather than asserted. The AI also correctly insisted the seat claim happen *after*
+the order is claimed, so nothing is taken for a booking somebody else already paid
+for. That ordering is the difference between a race that resolves and one that
+double-books.
+
+## What I would change about the workflow next time
+
+1. **Fix the environment first.** Two rounds were lost to assumptions that cost
+   seconds to check: port 5173 sits inside a Windows reserved range
+   (`netsh interface ipv4 show excludedportrange protocol=tcp` — Hyper-V held
+   5085–5184 on this machine), and Vite 8 needs Node `^20.19`, tighter than the
+   "Node 20+" in the notes. Both would have been caught by pinning the environment
+   before step one.
+2. **Ask for the deployment shape in the plan.** The one-port serving was built,
+   verified, and thrown away. "How does this ship?" is one question with a large
+   blast radius, and it belongs with "what are we building", not after.
+3. **Make the seed prove its claims the moment a doc makes them.** The guard that
+   fails unless the four demo cases exist should have been written when the README
+   first claimed them, not later. Documentation that nothing checks drifts.
+4. **Do not run two agents on one working tree.** A parallel session caused 25
+   unrelated tests to fail with `403` (both runs rebuilding the shared `test.db`),
+   and an unrelated commit absorbed a whole phase's API work because it was sitting
+   uncommitted in the same tree. One writer per repository is a real constraint, not
+   a preference.
+5. **Show a thin slice sooner.** The first version of the booking flow put booking,
+   payment and status on one scrolling page. That was a defensible reading of "two
+   views, no router", and it was wrong — the fix came only after I saw it. A demo of
+   the flow before the styling would have surfaced the preference earlier.
+6. **Have the AI mark its own uncertainty.** Several wrong claims were stated with
+   full confidence and no signal that they were recall rather than verification. The
+   workable rule is the one in `CLAUDE.md`: read the file or run the command, and
+   otherwise say what is unknown.
+
+## How I verified the final implementation
+
+Nothing below is "the AI said so" — every line is a command that was run or a query
+that returned a result.
+
+**The suite.** 214 tests — 157 against the API (19 files, unit and integration) and
+57 against the SPA (12 files). `npm test` runs both. The API tests run against a
+real SQLite database rebuilt from the migrations on every run, so the migrations are
+exercised rather than assumed.
+
+**Types and build.** `npm run typecheck` (both `tsc --noEmit` for the API and
+`svelte-check` for the components — 325 files, 0 errors) and `npm run build`.
+
+**The schema is where it claims to be.** `prisma migrate diff --from-migrations …
+--to-schema …` reports **"No difference detected"**, which is what proves the
+hand-written SQL — including the `CHECK` constraint Prisma does not model, and the
+indexes added by hand — still produces exactly the schema Prisma expects.
+
+**The constraints were proved by making them bite**, not by reading them. A raw
+`UPDATE` pushing `confirmedCount` past `capacity` is rejected by the `CHECK`; a raw
+duplicate `Enrollment` insert throws `UNIQUE constraint failed`. A constraint nobody
+has tried to violate is a constraint nobody knows works.
+
+**The new index is load-bearing.** `EXPLAIN QUERY PLAN` on the parent booking list
+returns `SEARCH Booking USING INDEX Booking_parentId_createdAt_idx (parentId=?)` —
+not a scan.
+
+**The invariants after every mutating test.** `expectSeatCountsConsistent` asserts
+`confirmedCount == COUNT(enrollments)` and `0 ≤ confirmedCount ≤ capacity`, so the
+counter and the roster cannot drift apart unnoticed. The last-seat race is looped
+five times with exactly one winner each run, and the loser verified to be fully
+cancelled, carrying a *failed* charge and no refund.
+
+**The demo, end to end, over the real API** — the same calls the SPA makes, against
+a *copy* of the development database so the seeded data stayed untouched: login →
+`/auth/me` → classes → book one class for two children (hold created, 900s, nothing
+charged) → pay with `4242…` → confirmed, the card read as `visa ····4242` → seats
+**4 → 2** → `GET /bookings` returns six orders newest-first with the new one on top
+→ as admin, the roster shows both children → cancel → **cancelled
+(`parent_cancelled`), refund 100** → seats **2 → 4** → the roster is empty and both
+children appear under refunds.
+
+**The cookie through the dev proxy.** `POST /api/auth/login` sets
+`session=…; HttpOnly; SameSite=Lax`, and the following calls carry it — which is the
+thing that would have quietly broken if same-origin had not held.
+
+**The seed proves itself.** `npm run seed` counts the four cases the README
+promises, and throws if one is missing: *"4 class(es) with seats, 1 at exactly 3/4,
+8 enrollment(s), 1 failed payment(s)."* The check is a pure function with its own
+unit tests, because the seed's module writes to the database as soon as it loads and
+could not otherwise be imported by a test.
+
+**What I did not verify, and would not claim:**
+
+- **The visuals.** I have no browser automation available here, so the interface is
+  verified by its 57 component tests and by the dev server serving every module —
+  not by looking at it. The visual check was done by hand.
+- **The last-seat race as an experience.** It is proved at the API level, where the
+  invariant lives. Nobody has automated two real browsers racing.
+- **Load.** No concurrency testing beyond the five-run race loop, no profiling. The
+  single-connection serialisation argument is a design property, not a measurement.
+- **A real deployment.** Two `.env.example` files and a note about the cookie/CORS
+  constraint are the whole of it.
+- **`/simplify` and `/security-review` on the frontend phase.** Phases 1, 2 and 5
+  were reviewed with both. I waived them for the Svelte work, and the commit says so
+  rather than implying otherwise.
