@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 <scope>
 - Stack (concluded 2026-09-28, recorded per phase in `.claude/plan/*.md`): TypeScript on Node 20+ · Hono · Prisma 7 + SQLite (better-sqlite3 driver adapter) · zod · hash-wasm argon2id · Svelte 5 + Vite SPA (Phase 3) · Vitest.
 - Keep `<commands>` below current with the real build/lint/test commands.
+- Deployment shape (2026-09-28): the API is a **pure API** — it never serves the SPA. `api/` and `web/` ship as separate containers, and `web/dist` is static output for whatever hosts the web container. The two are joined only by the Vite dev proxy (`/api` → :3000), which is what keeps them same-origin in dev.
 - Style modeled on ChrisTitusTech/titus-ai `AGENTS.md`: short, imperative rules. Keep it that way.
 </scope>
 
@@ -22,10 +23,9 @@ Every non-trivial task starts with planning, before any code is written.
 
 <commands>
 - `npm install` — install everything (npm workspaces: root + `api/` + `web/`)
-- `npm run dev` — the API on http://localhost:3000 **and** the SPA on http://localhost:4173 (one command; the SPA proxies `/api` to the API, so everything is same-origin and the session cookie works with no CORS)
+- `npm run dev` — the API on http://localhost:3000 **and** the SPA on http://localhost:4173 (one command; the SPA proxies `/api` to the API, so everything is same-origin and the session cookie works with no CORS). Both the SPA's port and the proxy target come from `web/.env` — `web/.env.example` documents every key. Copy it if `.env` is missing; the defaults in `vite.config.ts` match it.
 - `npm run dev:api` / `npm run dev:web` — either half on its own
-- `npm run build` — build the SPA into `web/dist`
-- `npm start` — build the SPA, then run the API, which serves `web/dist` too (the whole demo on :3000). The SPA is only mounted when `web/dist` exists
+- `npm run build` — build the SPA into `web/dist` (static output, served by whatever hosts the web container)
 - `npm test` — both Vitest suites: the API (`api/tests/{unit,integration}`), then the web (`web/tests/{unit,integration}`)
 - `npm test -- tests/integration/auth.test.ts` — one API test file (paths are relative to `api/`)
 - `npm run typecheck` — `tsc --noEmit` for the API, then `svelte-check` for the web (Svelte components are not `tsc`-checkable)

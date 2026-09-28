@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createPrisma } from '../src/db';
 import type { BookingStatus, CancelledReason, Prisma } from '../src/generated/prisma/client';
 import { holdExpiry } from '../src/helpers/bookings';
+import { missingScenarios } from '../src/helpers/demoScenarios';
 import { moneyJson, sumMoney } from '../src/helpers/money';
 import { hashPassword } from '../src/helpers/password';
 import { wipeAll } from '../src/helpers/reset';
@@ -201,6 +202,45 @@ async function main() {
     cancelledReason: 'seat_taken',
   });
 
+  await report();
+
+  console.log('Scenarios this seed guarantees, and how to reach them as Nadia:');
+  console.log('  seats available    Plants and How They Grow — book it, or add Weather and Seasons');
+  console.log('  exactly 3 booked   Fractions Made Easy — 3 of 4, so one seat is left');
+  console.log('  duplicate booking  book Fractions for Alya: she already has a seat there');
+  console.log('  payment failure    pay with 4000 0000 0000 0002; Weather and Seasons already');
+  console.log('                     has a declined-card booking for Bima in your history\n');
+}
+
+/**
+ * The four cases the demo promises, counted from what was just written.
+ *
+ * Throwing rather than warning is the point: a seed that quietly stops
+ * demonstrating one of these is worse than no seed at all, because the README
+ * still says it does. Same reason the `child()` helper throws on a typo.
+ * The check itself lives in `src/helpers` so it can be tested on its own.
+ */
+async function verifyScenarios() {
+  const classes = await prisma.trialClass.findMany();
+
+  const counts = {
+    classesWithSeats: classes.filter((entry) => seatsAvailable(entry) > 0).length,
+    classesAtExactlyThreeConfirmed: classes.filter((entry) => entry.confirmedCount === 3).length,
+    enrollments: await prisma.enrollment.count(),
+    failedPayments: await prisma.booking.count({ where: { status: 'payment_failed' } }),
+  };
+
+  const missing = missingScenarios(counts);
+  if (missing.length > 0) {
+    throw new Error(`seed: the demo data is missing ${missing.join('; ')}`);
+  }
+
+  return counts;
+}
+
+async function report() {
+  const counts = await verifyScenarios();
+
   console.log('Seeded demo data.\n');
   console.log('Accounts (all use the password below):');
   for (const person of PEOPLE) {
@@ -217,6 +257,11 @@ async function main() {
         `${cls.confirmedCount}/${cls.capacity} booked, ${seats} seat(s) left`,
     );
   }
+  console.log(
+    `\n${counts.classesWithSeats} class(es) with seats, ` +
+      `${counts.classesAtExactlyThreeConfirmed} at exactly 3/4, ` +
+      `${counts.enrollments} enrollment(s), ${counts.failedPayments} failed payment(s).\n`,
+  );
 }
 
 main()

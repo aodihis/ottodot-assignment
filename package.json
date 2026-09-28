@@ -3,21 +3,26 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "api"
+    "api",
+    "web"
   ],
   "scripts": {
-    "dev": "npm --workspace api run dev",
+    "dev": "concurrently --names api,web --prefix-colors blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm --workspace api run dev",
+    "dev:web": "npm --workspace web run dev",
+    "build": "npm --workspace web run build",
     "reset": "npm --workspace api run reset",
     "seed": "npm --workspace api run seed",
     "migrate": "npm --workspace api run migrate",
     "sweep": "npm --workspace api run sweep",
     "generate": "npm --workspace api run generate",
-    "test": "npm --workspace api run test",
+    "test": "npm --workspace api run test && npm --workspace web run test",
     "test:watch": "npm --workspace api run test:watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && npm --workspace web run check"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "concurrently": "^10.0.5",
     "typescript": "^5.9.0"
   },
   "allowScripts": {

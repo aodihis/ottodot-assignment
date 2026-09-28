@@ -1,0 +1,900 @@
+/* Trial class booking — the stylesheet.
+ *
+ * The subject is seats: four per class, counting down, and a race for the last
+ * one. So the seat count is the one loud element on the page, and it is driven
+ * entirely by markup that is already there — `.class-card[data-seats-available]`
+ * — rather than by a class the view has to remember to set.
+ *
+ * Everything else stays quiet: rows separated by hairlines instead of a grid of
+ * identical cards, one accent (teal) for actions and availability, marigold only
+ * for a running hold, brick only for a refusal.
+ *
+ * Every hook this styles is listed here so the selectors are discoverable:
+ *   .app[data-view]            .class-card[data-full]
+ *   .booking[data-status]      .hold-timer[data-lapsed]
+ *   .failure[data-code]        .payment[data-type][data-status]
+ */
+
+/* ---- Tokens ------------------------------------------------------------- */
+
+:root {
+  /* A cool paper rather than a warm cream, which is the default every generated
+   * page reaches for. */
+  --paper: #f0f3f2;
+  --surface: #ffffff;
+  --ink: #14201e;
+  --muted: #5e6e6a;
+  --line: #d9e0de;
+
+  --accent: #0e6b62;
+  --accent-ink: #0a4e47;
+  --accent-soft: #dcefec;
+
+  --warn: #a7620a;
+  --warn-soft: #fbefd8;
+
+  --danger: #b02a24;
+  --danger-soft: #fbe4e2;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+
+  /* Rounded faces suit a product for children, and both platforms ship one:
+   * `ui-rounded` on Apple, Segoe on Windows. No webfont, so nothing to download
+   * and no flash of unstyled text. */
+  --font: ui-rounded, 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  --step--1: 0.875rem;
+  --step-0: 1rem;
+  --step-1: 1.25rem;
+  --step-2: 1.45rem;
+  --step-3: 1.8rem;
+
+  --measure: 62rem;
+}
+
+/* ---- Base --------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--step-0);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0 0 0.4em;
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+h1 { font-size: var(--step-3); }
+h2 { font-size: var(--step-2); }
+h3 { font-size: var(--step-1); }
+h4 { font-size: var(--step-0); }
+
+p {
+  margin: 0 0 0.8em;
+  /* Lines a person can actually read. */
+  max-width: 68ch;
+}
+
+ul,
+ol,
+dl {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* The countdown and the money must not jitter as digits change width. */
+.hold-remaining,
+.price,
+.flow__total strong,
+.seats,
+.booking-item__price,
+.my-booking__amount {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Layout ------------------------------------------------------------- */
+
+.app {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 0 1.25rem 4rem;
+}
+
+.app > section {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.app-header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 1.25rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Pushes the name and sign-out to the right. */
+.brand {
+  margin-right: auto;
+  color: inherit;
+  font-size: var(--step-1);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+/* The way back out of a step. Quiet, because the primary action on every screen
+ * is forward. */
+.back {
+  margin: 1.25rem 0 0;
+  font-size: var(--step--1);
+}
+
+.back a {
+  color: var(--muted);
+}
+
+.back a:hover {
+  color: var(--ink);
+}
+
+.who {
+  font-weight: 600;
+}
+
+.loading {
+  padding: 3rem 0;
+  color: var(--muted);
+}
+
+/* ---- Buttons ------------------------------------------------------------ */
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+/* `.book`, `.confirm-booking` and `.open-booking` are anchors — real links, so the
+ * browser's Back button and the keyboard work without a handler. They still want
+ * the button look, and `inline-block` so the padding takes. */
+a.book,
+a.confirm-booking,
+a.open-booking {
+  display: inline-block;
+  text-align: center;
+  text-decoration: none;
+}
+
+button[type='submit'],
+.book,
+.confirm-booking,
+.pay,
+.use-account,
+.sign-out,
+.remove-child,
+.cancel-choice,
+.cancel-booking,
+.open-booking {
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  padding: 0.5rem 0.9rem;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+/* Primary: the one thing to do on this panel. */
+button[type='submit'],
+.book,
+.confirm-booking,
+.pay,
+.use-account {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  border-color: var(--accent);
+}
+
+button[type='submit']:hover:not(:disabled),
+.book:hover:not(:disabled),
+.confirm-booking:hover:not(:disabled),
+.pay:hover:not(:disabled),
+.use-account:hover:not(:disabled) {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+}
+
+/* Secondary: quiet, outlined. */
+.sign-out,
+.remove-child,
+.cancel-choice,
+.cancel-booking,
+.open-booking {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+}
+
+.sign-out:hover,
+.remove-child:hover,
+.cancel-choice:hover,
+.cancel-booking:hover,
+.open-booking:hover {
+  color: var(--ink);
+  border-color: var(--muted);
+}
+
+/* A cancellation is destructive, so it says so. */
+.cancel-booking {
+  color: var(--danger);
+  border-color: var(--danger-soft);
+}
+
+.cancel-booking:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---- Inputs ------------------------------------------------------------- */
+
+input {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.6rem;
+  min-width: 16rem;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+label input {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--ink);
+  font-size: var(--step-0);
+}
+
+/* ---- Login -------------------------------------------------------------- */
+
+.login {
+  max-width: 32rem;
+  margin: 3rem auto 0;
+}
+
+.login__form {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+}
+
+.login__switch {
+  margin-top: 1rem;
+  font-size: var(--step--1);
+}
+
+.switch-mode {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.accounts {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.accounts__password {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.accounts__password code {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.accounts__list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+}
+
+.use-account {
+  font-weight: 500;
+}
+
+.accounts__note {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* ---- Children ----------------------------------------------------------- */
+
+.children__list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.child__name {
+  font-weight: 500;
+}
+
+.children__empty,
+.my-bookings__empty,
+.choose-children__empty {
+  color: var(--muted);
+  padding: 0.5rem 0;
+}
+
+.add-child {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.add-child label {
+  margin-bottom: 0;
+}
+
+/* ---- Classes ------------------------------------------------------------ */
+
+/* A class is a list row, not a card: the page is a list of five things, and five
+ * identical boxes would be five times the chrome for the same information. */
+.class-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 1.25rem;
+  padding: 1.1rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.class-card__title {
+  margin-bottom: 0;
+}
+
+.class-card__subject,
+.class-card__description,
+.class-card__facts {
+  flex: 1 1 100%;
+}
+
+.class-card__subject,
+.class-card__description {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* Label and value as one unit, with a wider break between units, so the row wraps
+ * at a pair boundary rather than between a label and its value. */
+.class-card__facts {
+  font-size: var(--step--1);
+}
+
+.class-card__facts dt {
+  display: inline;
+  color: var(--muted);
+}
+
+.class-card__facts dd {
+  display: inline;
+  margin: 0 1.25rem 0 0.35rem;
+}
+
+.class-card__facts dd:last-child {
+  margin-right: 0;
+}
+
+/* The seat count — the one loud element. Coloured from the data attribute the
+ * server's `seatsAvailable` drives, so a full class and a last-seat class are
+ * distinguishable without reading the number. */
+.seats {
+  font-weight: 650;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+
+.class-card[data-seats-available='1'] .seats {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.class-card[data-full='true'] .seats {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.class-card[data-full='true'] .class-card__title {
+  color: var(--muted);
+}
+
+.holds {
+  color: var(--warn);
+}
+
+/* Last in the markup, so it lands on its own line and holds the right edge. */
+.class-card .book {
+  margin-left: auto;
+}
+
+/* ---- Choosing children -------------------------------------------------- */
+
+.choose-children {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+}
+
+.child-picker li {
+  padding: 0.3rem 0;
+}
+
+.child-picker label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--step-0);
+  cursor: pointer;
+}
+
+.child-picker input {
+  min-width: auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--accent);
+}
+
+.choose-children__total {
+  margin: 1rem 0;
+  color: var(--muted);
+}
+
+.choose-children__total strong {
+  color: var(--ink);
+  font-size: var(--step-1);
+}
+
+.confirm-booking {
+  margin-right: 0.5rem;
+}
+
+/* ---- A step of the flow -------------------------------------------------- */
+
+/* Booking, paying and a booking's status are their own screens. The order block
+ * below is shared by the payment screen and the status screen, so the thing being
+ * paid for never changes shape between them. */
+
+.flow {
+  max-width: 44rem;
+  margin-top: 1.5rem;
+}
+
+.flow__description,
+.flow__facts,
+.flow__note {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.flow__status {
+  margin-bottom: 0.2rem;
+  font-size: var(--step-1);
+}
+
+.flow__status[data-status='confirmed'] strong { color: var(--accent); }
+.flow__status[data-status='pending_payment'] strong { color: var(--warn); }
+.flow__status[data-status='payment_failed'] strong,
+.flow__status[data-status='cancelled'] strong { color: var(--muted); }
+
+.flow__total {
+  margin: 1.25rem 0 0.75rem;
+  font-size: var(--step-1);
+}
+
+.flow__note a,
+.flow__facts a {
+  color: var(--accent);
+}
+
+/* A button that reads as a link: the one secondary action on a screen that does
+ * not deserve a button's weight, like releasing the seats. */
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.order li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.9rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--line);
+  font-size: var(--step--1);
+}
+
+.order li[data-refunded='true'] {
+  opacity: 0.75;
+}
+
+.booking-item__name {
+  font-weight: 600;
+  font-size: var(--step-0);
+}
+
+.booking-item__class,
+.booking-item__when {
+  color: var(--muted);
+}
+
+.booking-item__refund {
+  color: var(--warn);
+}
+
+.booking-payments {
+  margin-top: 0.75rem;
+  font-size: var(--step--1);
+  color: var(--muted);
+}
+
+.booking-payments li {
+  padding: 0.15rem 0;
+}
+
+.payment-card {
+  color: var(--ink);
+}
+
+.payment-reason {
+  color: var(--danger);
+}
+
+.booking-payments li[data-status='failed'] {
+  color: var(--danger);
+}
+
+/* ---- The hold ----------------------------------------------------------- */
+
+.hold-timer {
+  margin: 1rem 0;
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.hold-timer[data-lapsed='true'] {
+  color: var(--danger);
+}
+
+.hold-remaining {
+  font-size: var(--step-1);
+}
+
+.payment-withheld {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* ---- Paying ------------------------------------------------------------- */
+
+.payment {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.test-cards {
+  margin-top: 0.75rem;
+  font-size: var(--step--1);
+  color: var(--muted);
+}
+
+.test-cards li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+.use-card {
+  background: transparent;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.5rem;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.use-card:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.use-card[data-outcome='declined'],
+.use-card[data-outcome='insufficient funds'] {
+  color: var(--danger);
+}
+
+.use-card[data-outcome='declined']:hover,
+.use-card[data-outcome='insufficient funds']:hover {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* ---- Failures ----------------------------------------------------------- */
+
+/* Failure and emptiness are moments for direction, so the tone is plain: what
+ * happened, then what to do about it. The colour comes from the code. */
+.failure {
+  margin: 1rem 0;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  border-left: 4px solid var(--danger);
+}
+
+.failure[data-code='CLASS_FULL'],
+.failure[data-code='SEAT_TAKEN'],
+.failure[data-code='DUPLICATE_ACTIVE_BOOKING'],
+.failure[data-code='DUPLICATE_BOOKING'] {
+  background: var(--warn-soft);
+  border-left-color: var(--warn);
+}
+
+.failure[data-code='UNAUTHENTICATED'],
+.failure[data-code='FORBIDDEN'] {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+
+.failure-message {
+  margin: 0;
+  font-weight: 650;
+}
+
+.failure-detail {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.failure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.failure-actions button {
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  padding: 0.35rem 0.7rem;
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.failure-actions button:hover {
+  background: var(--surface);
+}
+
+/* ---- My bookings -------------------------------------------------------- */
+
+.my-bookings__list li {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--step--1);
+}
+
+.my-booking__status {
+  font-weight: 600;
+}
+
+.my-bookings__list li[data-status='confirmed'] .my-booking__status { color: var(--accent); }
+.my-bookings__list li[data-status='pending_payment'] .my-booking__status { color: var(--warn); }
+.my-bookings__list li[data-status='payment_failed'] .my-booking__status,
+.my-bookings__list li[data-status='cancelled'] .my-booking__status { color: var(--muted); }
+
+.my-booking__items,
+.my-booking__when {
+  color: var(--muted);
+}
+
+.my-bookings__list .open-booking {
+  justify-self: end;
+}
+
+/* ---- Admin -------------------------------------------------------------- */
+
+.admin-classes li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 1rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--step--1);
+}
+
+.admin-class__title {
+  font-weight: 600;
+  font-size: var(--step-0);
+}
+
+.admin-class__when,
+.admin-class__seats {
+  color: var(--muted);
+}
+
+.admin-class__holds {
+  color: var(--warn);
+}
+
+.roster {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 2px solid var(--line);
+}
+
+.roster__facts {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.roster h4 {
+  margin-top: 1.25rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.roster-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--step--1);
+}
+
+.roster-table th {
+  text-align: left;
+  padding: 0.35rem 0.75rem 0.35rem 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.roster-table td {
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.roster__name {
+  font-weight: 600;
+}
+
+.roster__parent,
+.roster__at {
+  color: var(--muted);
+}
+
+.roster__empty td,
+.pending-holds__empty,
+.refunded__empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.pending-holds li,
+.refunded li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  padding: 0.35rem 0;
+  font-size: var(--step--1);
+}
+
+.pending-hold__expires,
+.refunded__at {
+  color: var(--muted);
+}
+
+.refunded__amount {
+  color: var(--warn);
+}
+
+/* ---- Narrow ------------------------------------------------------------- */
+
+@media (max-width: 34rem) {
+  /* A full-width target, and easier to hit with a thumb. */
+  .class-card .book {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+
+  .my-bookings__list li {
+    grid-template-columns: auto auto 1fr;
+  }
+
+  .my-bookings__list .open-booking {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  input {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .add-child {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
