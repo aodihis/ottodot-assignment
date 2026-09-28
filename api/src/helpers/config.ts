@@ -16,6 +16,24 @@ export function cancellationCutoffDays(): number {
   return days;
 }
 
+export const DEFAULT_BOOKING_HOLD_MINUTES = 15;
+
+/**
+ * How long a parent's selection is held before it lapses. Read at call time, so a
+ * demo can shrink the timer (and show the sweep releasing seats) without editing
+ * code or restarting anything.
+ */
+export function bookingHoldMinutes(): number {
+  const raw = process.env.BOOKING_HOLD_MINUTES;
+  if (raw === undefined || raw.trim() === '') return DEFAULT_BOOKING_HOLD_MINUTES;
+
+  const minutes = Number(raw);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    throw new Error(`BOOKING_HOLD_MINUTES must be a number > 0 (got "${raw}")`);
+  }
+  return minutes;
+}
+
 /**
  * The cutoff is a duration, not a calendar date: `startsAt` minus N * 24h in UTC.
  * Computed, never stored, so changing the env var changes it everywhere at once.

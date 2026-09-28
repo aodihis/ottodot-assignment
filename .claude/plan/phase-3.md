@@ -19,14 +19,14 @@ Deliverables: public GitHub repo with README.md, implementation, seed data, test
 | 1 | As a developer/reviewer, I can reset+seed demo data in one command, so the demo runs in minutes | planned (Phase 1) |
 | 2 | As a parent or admin, I can log in with a seeded account, so the API is session-gated | planned (Phase 1) |
 | 3 | As a parent, I can see my children and trial classes with seats remaining | planned (Phase 1 API, Phase 3 UI) |
-| 4 | As a parent, I can book a trial class for my child and see the booking status after submission | planned (Phase 2 API, Phase 3 UI) |
-| 5 | As a parent, I can mock-pay; on failure my child is not on the roster and I can retry | planned (Phase 2 API, Phase 3 UI) |
-| 6 | As a parent competing for the last seat, only the first successful payment confirms; the loser is clearly told and not charged | planned (Phase 2 API, Phase 3 UI) |
-| 7 | As an admin, I can list classes and view each class's confirmed roster | planned (Phase 2 API, Phase 3 UI) |
-| 8 | As a reviewer, I can run a test suite proving all invariants | planned (Phase 2 + 4) |
+| 4 | As a parent, I can book a trial class for my child and see the booking status after submission | done (Phase 2 API; Phase 3 UI) |
+| 5 | As a parent, I can mock-pay; on failure my child is not on the roster and I can retry | done (Phase 2 API; Phase 3 UI) |
+| 6 | As a parent competing for the last seat, only the first successful payment confirms; the loser is clearly told and not charged | done (Phase 2 API; Phase 3 UI) |
+| 7 | As an admin, I can list classes and view each class's confirmed roster | done (Phase 2 API; Phase 3 UI) |
+| 8 | As a reviewer, I can run a test suite proving all invariants | done (128 tests; presented in Phase 4) |
 | 9 | As a visitor, I can register with my email and password, so I can use the app without a seeded account | planned (Phase 1 API, Phase 3 UI) |
 | 10 | As a parent, I can add and remove my own children | planned (Phase 1 API, Phase 3 UI) |
-| 11 | As a parent, I can cancel a confirmed booking before the cancellation cutoff and receive a mock refund | planned (Phase 2 API, Phase 3 UI) |
+| 11 | As a parent, I can cancel a confirmed booking before the cancellation cutoff and receive a mock refund | done (Phase 2 API; Phase 3 UI) |
 
 ## Stack (concluded 2026-09-28)
 
@@ -59,8 +59,8 @@ A working browser flow a reviewer (and the video) can walk: log in, pick a child
 
 1. Scaffold `web/` (Vite + Svelte 5), workspace wiring, dev proxy to the API.
 2. Auth views: login and register (seeded accounts listed on screen, cookie via `fetch` with `credentials: 'include'`) and session bootstrapping (`GET /api/auth/me` on load).
-3. Parent flow: children (add / remove) → class list with `seatsAvailable` and `cancellationDeadline` → book → mock pay (success/failure buttons) → booking status with `canCancel` and a cancel-for-refund action, including the friendly failure states from the 409s (`SEAT_TAKEN`, `DUPLICATE_ACTIVE_BOOKING`, `CANCELLATION_WINDOW_CLOSED`, …). **Refetch the class list after a cancel** — a released seat raises `seatsAvailable` with no purchase behind it.
-4. Admin view: class list + per-class roster (confirmed, pending holds, and refunded cancellations — so refunded students don't simply vanish).
+3. Parent flow: children (add / remove) → class list with `seatsAvailable`, `pendingHolds` and `cancellationDeadline` → book → mock pay (**good card / declining card**, not success/failure buttons — the outcome is derived from the card number) → booking status with `canCancel` and a cancel-for-refund action, including the friendly failure states from the 409s (`SEAT_TAKEN`, `DUPLICATE_ACTIVE_BOOKING`, `CANCELLATION_WINDOW_CLOSED`, …). While a hold runs, watch `expiresAt`; `canCancel` is the server's answer, so the UI does not re-derive it. **Refetch the class list after a cancel** — a released seat raises `seatsAvailable` with no purchase behind it.
+4. Admin view: class list + per-class roster (`roster`, `pendingHolds`, and `refunded` — keyed `refunded` because only a refunded cancellation leaves a row, so refunded students don't simply vanish).
 5. Prod path: Hono serves `web/dist` so one command runs the whole demo.
 
 ## Out of scope (this phase)

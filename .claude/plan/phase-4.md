@@ -18,14 +18,18 @@ The README must explain: the approach, why it was chosen, the tradeoffs accepted
 
 | # | Story | Status |
 |---|-------|--------|
-| 1 | As a developer/reviewer, I can reset+seed demo data in one command, so the demo runs in minutes | planned (Phase 1) |
-| 2 | As a parent or admin, I can log in with a seeded account, so the API is session-gated | planned (Phase 1) |
-| 3 | As a parent, I can see my children and trial classes with seats remaining | planned (Phase 1+3) |
-| 4 | As a parent, I can book a trial class for my child and see the booking status after submission | planned (Phase 2+3) |
-| 5 | As a parent, I can mock-pay; on failure my child is not on the roster and I can retry | planned (Phase 2+3) |
-| 6 | As a parent competing for the last seat, only the first successful payment confirms; the loser is clearly told and not charged | planned (Phase 2+3) |
-| 7 | As an admin, I can list classes and view each class's confirmed roster | planned (Phase 2+3) |
-| 8 | As a reviewer, I can run a test suite proving all invariants | planned (Phase 2, presented in Phase 4) |
+| 1 | As a developer/reviewer, I can reset+seed demo data in one command, so the demo runs in minutes | done (Phase 1) |
+| 2 | As a parent or admin, I can log in (seeded account or my own registration), so the API is session-gated | done (Phase 1) |
+| 3 | As a parent, I can see my children and trial classes with seats remaining | done (API; UI in Phase 3) |
+| 4 | As a parent, I can book a trial class for my child and see the booking status after submission | done (Phase 2; Phase 3 UI) |
+| 5 | As a parent, I can mock-pay; on failure my child is not on the roster and I can retry | done (Phase 2; Phase 3 UI) |
+| 6 | As a parent competing for the last seat, only the first successful payment confirms; the loser is clearly told and not charged | done (Phase 2; Phase 3 UI) |
+| 7 | As an admin, I can list classes and view each class's confirmed roster | done (API; UI in Phase 3) |
+| 8 | As a reviewer, I can run a test suite proving all invariants | done (131 tests; presented in Phase 4) |
+| 9 | As a visitor, I can register with my email and password, so I can use the app without a seeded account | done (Phase 1) |
+| 10 | As a parent, I can add and remove my own children | done (Phase 1) |
+| 11 | As a parent, I can cancel a confirmed booking before the cancellation cutoff and receive a mock refund | done (Phase 2) |
+| 12 | As a parent, my selection is held for a limited time, and released back to the class when it lapses | done (Phase 2) |
 
 ## Stack (concluded 2026-09-28)
 
@@ -37,10 +41,11 @@ TypeScript (Node 20+) · Hono + `@hono/node-server` · Prisma 7 + SQLite via the
 - 2026-09-28 — Soft holds: pendings don't consume seats; availability = `capacity − confirmedCount`; resolution at payment. This is what makes the assignment's race scenario reachable (B must be able to select A's last seat).
 - 2026-09-28 — Authoritative capacity guard = conditional atomic `updateMany` on `TrialClass.confirmedCount` inside the confirm transaction; duplicate re-checked in the same transaction.
 - 2026-09-28 — Serialization is structural: the better-sqlite3 driver adapter is one synchronous SQLite connection, which is what makes every check-then-act guard safe (it replaced a `connection_limit=1` URL parameter).
-- 2026-09-28 — Partial unique index `WHERE status = 'confirmed'` as the database backstop (P2002 → 409), applied via a hand-edited migration.
+- 2026-09-28 — **A booking is an order with line items** (`Booking` + `BookingItem`), and a paid line writes an **`Enrollment`** (the registration): plain `UNIQUE(studentId, classId)` replaced the partial index `WHERE status = 'confirmed'`, so the duplicate guarantee no longer needs a predicate. `TrialClass` carries a hand-added `CHECK (confirmedCount BETWEEN 0 AND capacity)`; its invariant is `confirmedCount == COUNT(enrollments)`.
 - 2026-09-28 — Pay is a conditional status transition (idempotent double-pay; 409 `BOOKING_NOT_PAYABLE` on failed/cancelled/expired).
-- 2026-09-28 — Lazy expiry via conditional writes; no background job. Class-started rule (`startsAt <= now` → 409) and effective expiry `min(expiresAt, startsAt)`.
-- 2026-09-28 — `priceCents` snapshotted onto Booking.
+- 2026-09-28 — Lazy expiry via conditional writes; no background job. Class-started rule (`startsAt <= now` → 409) and effective expiry `min(expiresAt, startsAt)`. `npm run sweep` retires lapsed selections as a demo surface; a selection never held a seat, so it releases nothing.
+- 2026-09-28 — Money is a `Decimal` at 2 dp exposed as a JSON number (`price`, `amount`, `refundAmount`), not `priceCents` — the user's call, for debuggability.
+- 2026-09-28 — Payment is mock: success is derived from the card number (4242 approves, `…0002` declines). The charge is decided *before* the seat guard (pre-authorisation), so the last-seat loser is never charged and needs no refund.
 - 2026-09-28 — Auth in Phase 1 (seeded accounts; parent-scoped bookings; admin gate). Demo-grade by design — stated in the README.
 - 2026-09-28 — Red-team review (13 findings) accepted and folded into the design.
 - 2026-09-28 — Deferred: pre-auth vs charge-then-refund (decided in Phase 2), roster auth assumption.

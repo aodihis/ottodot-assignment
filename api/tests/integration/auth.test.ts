@@ -173,7 +173,7 @@ describe('session gating', () => {
 
   it('lets a parent read their own data but not the admin views', async () => {
     await createUser(db, { email: 'nadia@test.dev', name: 'Nadia', students: ['Alya'] });
-    const cookie = await loginAs(app, 'nadia@test.dev');
+    const cookie = await loginAs(db, 'nadia@test.dev');
 
     expect((await api.get('/api/students', cookie)).status).toBe(200);
 
@@ -184,7 +184,7 @@ describe('session gating', () => {
 
   it('lets an admin read the admin views', async () => {
     await createUser(db, { email: 'admin@test.dev', name: 'Admin', role: 'admin' });
-    const cookie = await loginAs(app, 'admin@test.dev');
+    const cookie = await loginAs(db, 'admin@test.dev');
 
     expect((await api.get('/api/admin/classes', cookie)).status).toBe(200);
 

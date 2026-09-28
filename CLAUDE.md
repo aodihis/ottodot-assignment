@@ -28,6 +28,7 @@ Every non-trivial task starts with planning, before any code is written.
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run migrate -- --name <name>` — create and apply a Prisma migration
 - `npm run seed` — reseed the dev database
+- `npm run sweep` — release lapsed seat selections (the hold timer's counterpart; safe to re-run, and cron-able)
 - `npm run reset` — drop, migrate, and reseed the dev database. Prisma refuses this when an agent runs it: ask the user to run it (applying a migration with `npm run migrate` is not blocked)
 - Lint: not configured yet.
 </commands>

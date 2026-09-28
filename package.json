@@ -10,6 +10,7 @@
     "reset": "npm --workspace api run reset",
     "seed": "npm --workspace api run seed",
     "migrate": "npm --workspace api run migrate",
+    "sweep": "npm --workspace api run sweep",
     "generate": "npm --workspace api run generate",
     "test": "npm --workspace api run test",
     "test:watch": "npm --workspace api run test:watch",

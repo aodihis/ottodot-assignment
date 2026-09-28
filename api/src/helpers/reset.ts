@@ -6,7 +6,9 @@ import type { Db } from '../db';
  * places meant a table added later could be forgotten in one of them.
  */
 export async function wipeAll(db: Db) {
-  await db.paymentAttempt.deleteMany();
+  await db.payment.deleteMany();
+  await db.enrollment.deleteMany();
+  await db.bookingItem.deleteMany();
   await db.booking.deleteMany();
   await db.student.deleteMany();
   await db.parent.deleteMany();

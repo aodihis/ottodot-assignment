@@ -21,14 +21,14 @@ Regular enrollment is explicitly out of scope. Deliverables: public GitHub repo 
 | 1 | As a developer/reviewer, I can reset+seed demo data in one command, so the demo runs in minutes | done |
 | 2 | As a parent or admin, I can log in (seeded account or my own registration), so the API is session-gated | done |
 | 3 | As a parent, I can see my children and trial classes with seats remaining | done (API; UI in Phase 3) |
-| 4 | As a parent, I can book a trial class for my child and see the booking status after submission | planned (Phase 2) |
-| 5 | As a parent, I can mock-pay; on failure my child is not on the roster and I can retry | planned (Phase 2) |
-| 6 | As a parent competing for the last seat, only the first successful payment confirms; the loser is clearly told and not charged | planned (Phase 2) |
+| 4 | As a parent, I can book a trial class for my child and see the booking status after submission | done (Phase 2) |
+| 5 | As a parent, I can mock-pay; on failure my child is not on the roster and I can retry | done (Phase 2) |
+| 6 | As a parent competing for the last seat, only the first successful payment confirms; the loser is clearly told and not charged | done (Phase 2) |
 | 7 | As an admin, I can list classes and view each class's confirmed roster | done (API; UI in Phase 3) |
-| 8 | As a reviewer, I can run a test suite proving all invariants | in progress (Phase 2 + 4) |
+| 8 | As a reviewer, I can run a test suite proving all invariants | done (128 tests; presented in Phase 4) |
 | 9 | As a visitor, I can register with my email and password, so I can use the app without a seeded account | done |
 | 10 | As a parent, I can add and remove my own children | done |
-| 11 | As a parent, I can cancel a confirmed booking before the cancellation cutoff and receive a mock refund | planned (Phase 2) |
+| 11 | As a parent, I can cancel a confirmed booking before the cancellation cutoff and receive a mock refund | done (Phase 2) |
 
 ## Stack (concluded 2026-09-28)
 

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Db } from '../../db';
 import { z } from 'zod';
 import type { Env } from '../../app';
-import { ApiError } from '../../helpers/http';
+import { ApiError, successBody } from '../../helpers/http';
 import { authenticate, findSessionUser, registerParent, toPublicUser } from './auth.service';
 import { clearSession, issueSession } from './session';
 
@@ -30,7 +30,7 @@ export function createAuthRoutes(db: Db) {
     const user = await registerParent(db, body);
 
     await issueSession(c, user);
-    return c.json({ user }, 201);
+    return c.json(successBody('Account created', { user }), 201);
   });
 
   app.post('/login', async (c) => {
@@ -38,7 +38,7 @@ export function createAuthRoutes(db: Db) {
     const user = await authenticate(db, body);
 
     await issueSession(c, user);
-    return c.json({ user });
+    return c.json(successBody('Logged in', { user }));
   });
 
   app.post('/logout', (c) => {
@@ -60,11 +60,13 @@ export function createSessionRoutes(db: Db) {
     const user = await findSessionUser(db, c.get('userId'));
     if (!user) throw new ApiError(401, 'UNAUTHENTICATED', 'This session is no longer valid');
 
-    return c.json({
-      user: toPublicUser(user),
-      parent: user.parent ? { id: user.parent.id } : null,
-      students: user.parent?.students ?? [],
-    });
+    return c.json(
+      successBody('OK', {
+        user: toPublicUser(user),
+        parent: user.parent ? { id: user.parent.id } : null,
+        students: user.parent?.students ?? [],
+      }),
+    );
   });
 
   return app;

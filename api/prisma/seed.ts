@@ -1,13 +1,18 @@
+import { randomUUID } from 'node:crypto';
 import { createPrisma } from '../src/db';
+import type { BookingStatus, CancelledReason, Prisma } from '../src/generated/prisma/client';
 import { holdExpiry } from '../src/helpers/bookings';
+import { moneyJson, sumMoney } from '../src/helpers/money';
 import { hashPassword } from '../src/helpers/password';
 import { wipeAll } from '../src/helpers/reset';
+import { registerChildren, seatsAvailable } from '../src/helpers/seats';
 
 const prisma = createPrisma();
 
 const DAY = 86_400_000;
 const inDays = (days: number) => new Date(Date.now() + days * DAY);
 const SEED_PASSWORD = 'password123';
+const CURRENCY = 'SGD';
 
 const PEOPLE = [
   { email: 'admin@demo.test', name: 'Ms. Tan', role: 'admin' as const, children: [] as string[] },
@@ -16,12 +21,14 @@ const PEOPLE = [
   { email: 'parent3@demo.test', name: 'Sari', role: 'parent' as const, children: ['Dewi', 'Eka'] },
 ];
 
-/** Creates the accounts and returns a lookup that throws on a misspelled child. */
-async function seedPeople() {
+async function main() {
+  await wipeAll(prisma);
+
   const passwordHash = await hashPassword(SEED_PASSWORD);
+  const parentIds = new Map<string, string>();
 
   for (const person of PEOPLE) {
-    await prisma.user.create({
+    const user = await prisma.user.create({
       data: {
         email: person.email,
         name: person.name,
@@ -29,124 +36,169 @@ async function seedPeople() {
         passwordHash,
         ...(person.role === 'admin'
           ? {}
-          : {
-              parent: {
-                create: { students: { create: person.children.map((name) => ({ name })) } },
-              },
-            }),
+          : { parent: { create: { students: { create: person.children.map((name) => ({ name })) } } } }),
       },
+      include: { parent: true },
     });
+
+    if (user.parent) parentIds.set(person.email, user.parent.id);
   }
 
-  const byName = new Map<string, string>();
+  const childIds = new Map<string, string>();
   for (const person of PEOPLE) {
     for (const name of person.children) {
       const student = await prisma.student.findFirstOrThrow({ where: { name } });
-      byName.set(name, student.id);
+      childIds.set(name, student.id);
     }
   }
 
-  return (name: string) => {
-    const id = byName.get(name);
+  // Resolved by name, so a typo below fails loudly instead of at `undefined`.
+  const child = (name: string) => {
+    const id = childIds.get(name);
     if (!id) throw new Error(`seed: no child named "${name}"`);
     return id;
   };
-}
-
-async function confirmedBooking(input: {
-  studentId: string;
-  classId: string;
-  priceCents: number;
-  confirmedAt: Date;
-}) {
-  await prisma.booking.create({
-    data: {
-      studentId: input.studentId,
-      classId: input.classId,
-      status: 'confirmed',
-      expiresAt: holdExpiry(input.confirmedAt),
-      priceCents: input.priceCents,
-      confirmedAt: input.confirmedAt,
-      attempts: { create: { outcome: 'success', amountCents: input.priceCents } },
-    },
-  });
-
-  await prisma.trialClass.update({
-    where: { id: input.classId },
-    data: { confirmedCount: { increment: 1 } },
-  });
-}
-
-async function main() {
-  await wipeAll(prisma);
-  const child = await seedPeople();
+  const parent = (email: string) => {
+    const id = parentIds.get(email);
+    if (!id) throw new Error(`seed: no parent account for "${email}"`);
+    return id;
+  };
 
   // Relative dates keep the demo meaningful whenever it is run.
   const plants = await prisma.trialClass.create({
-    data: { title: 'Plants and How They Grow', subject: 'science', startsAt: inDays(7), priceCents: 5000 },
+    data: {
+      title: 'Plants and How They Grow',
+      description: 'Seeds, sunlight and roots — how a tiny seed becomes a plant.',
+      subject: 'science',
+      startsAt: inDays(7),
+      price: 50,
+    },
   });
   const fractions = await prisma.trialClass.create({
-    data: { title: 'Fractions Made Easy', subject: 'math', startsAt: inDays(9), priceCents: 5000 },
+    data: {
+      title: 'Fractions Made Easy',
+      description: 'Halves, thirds and quarters with pizza, chocolate and number lines.',
+      subject: 'math',
+      startsAt: inDays(9),
+      price: 50,
+    },
   });
   const machines = await prisma.trialClass.create({
-    data: { title: 'Simple Machines', subject: 'science', startsAt: inDays(10), priceCents: 6000 },
+    data: {
+      title: 'Simple Machines',
+      description: 'Levers, pulleys and ramps: how small forces move big things.',
+      subject: 'science',
+      startsAt: inDays(10),
+      price: 60,
+    },
   });
   const shapes = await prisma.trialClass.create({
-    data: { title: 'Shapes Around Us', subject: 'math', startsAt: inDays(2), priceCents: 5000 },
+    data: {
+      title: 'Shapes Around Us',
+      description: 'Triangles, circles and squares hiding in everyday objects.',
+      subject: 'math',
+      startsAt: inDays(2),
+      price: 50,
+    },
   });
   const weather = await prisma.trialClass.create({
-    data: { title: 'Weather and Seasons', subject: 'science', startsAt: inDays(12), priceCents: 5000 },
+    data: { title: 'Weather and Seasons', subject: 'science', startsAt: inDays(12), price: 50 },
   });
 
-  const now = new Date();
-  const confirm = (student: string, cls: { id: string; priceCents: number }) =>
-    confirmedBooking({
-      studentId: child(student),
-      classId: cls.id,
-      priceCents: cls.priceCents,
-      confirmedAt: now,
+  /** Books children into a class, keeping the seat counter in step with the rows. */
+  const book = async (input: {
+    parent: string;
+    children: string[];
+    cls: { id: string; capacity: number; price: Prisma.Decimal };
+    status: BookingStatus;
+    cancelledReason?: CancelledReason;
+  }) => {
+    const now = new Date();
+    const amount = sumMoney(input.children.map(() => input.cls.price));
+    const paid = input.status === 'confirmed';
+
+    const booking = await prisma.booking.create({
+      data: {
+        parentId: input.parent,
+        status: input.status,
+        amount,
+        currency: CURRENCY,
+        expiresAt: holdExpiry(now),
+        cancelledReason: input.cancelledReason ?? null,
+        confirmedAt: paid ? now : null,
+        cancelledAt: input.status === 'cancelled' ? now : null,
+        items: {
+          create: input.children.map((name) => ({
+            studentId: child(name),
+            classId: input.cls.id,
+            price: input.cls.price,
+          })),
+        },
+        // A selection waiting for payment has no payment row yet — that is the point.
+        ...(input.status === 'pending_payment'
+          ? {}
+          : {
+              payments: {
+                create: {
+                  type: 'charge' as const,
+                  status: paid ? ('succeeded' as const) : ('failed' as const),
+                  amount,
+                  currency: CURRENCY,
+                  card: JSON.stringify({
+                    brand: 'visa',
+                    last4: paid ? '4242' : '0002',
+                    holder: 'Demo Parent',
+                  }),
+                  reference: `seed_${randomUUID()}`,
+                  failureReason: paid
+                    ? null
+                    : input.cancelledReason === 'seat_taken'
+                      ? 'seat_taken'
+                      : 'card_declined',
+                },
+              },
+            }),
+      },
+      include: { items: true },
     });
 
-  // Fractions: three confirmed, so exactly one seat is left — the last-seat case.
-  await confirm('Alya', fractions);
-  await confirm('Citra', fractions);
-  await confirm('Dewi', fractions);
+    if (paid) {
+      // A paid booking registers the children: one enrollment per line, plus the
+      // counter the capacity guard reads. The two move together, here and on the
+      // payment path, because they must agree.
+      await registerChildren(prisma, {
+        classId: input.cls.id,
+        capacity: input.cls.capacity,
+        now,
+        items: booking.items,
+      });
+    }
+  };
 
-  // Simple Machines: full.
-  await confirm('Bima', machines);
-  await confirm('Citra', machines);
-  await confirm('Dewi', machines);
-  await confirm('Eka', machines);
+  // Fractions: three confirmed, so exactly one seat is left — the last-seat case.
+  await book({ parent: parent('parent1@demo.test'), children: ['Alya'], cls: fractions, status: 'confirmed' });
+  await book({ parent: parent('parent2@demo.test'), children: ['Citra'], cls: fractions, status: 'confirmed' });
+  await book({ parent: parent('parent3@demo.test'), children: ['Dewi'], cls: fractions, status: 'confirmed' });
+
+  // Simple Machines: full, and one order covers two children.
+  await book({ parent: parent('parent1@demo.test'), children: ['Bima'], cls: machines, status: 'confirmed' });
+  await book({ parent: parent('parent2@demo.test'), children: ['Citra'], cls: machines, status: 'confirmed' });
+  await book({ parent: parent('parent3@demo.test'), children: ['Dewi', 'Eka'], cls: machines, status: 'confirmed' });
 
   // Shapes starts inside the cancellation cutoff: cancelling it must be refused.
-  await confirm('Alya', shapes);
+  await book({ parent: parent('parent1@demo.test'), children: ['Alya'], cls: shapes, status: 'confirmed' });
 
-  // History: a payment that failed, and a hold that lost the last seat.
-  await prisma.booking.create({
-    data: {
-      studentId: child('Bima'),
-      classId: weather.id,
-      status: 'payment_failed',
-      expiresAt: holdExpiry(now),
-      priceCents: weather.priceCents,
-      attempts: {
-        create: { outcome: 'failure', reason: 'card_declined', amountCents: weather.priceCents },
-      },
-    },
-  });
+  // A live selection, timer running — what `npm run sweep` exists for.
+  await book({ parent: parent('parent1@demo.test'), children: ['Bima'], cls: plants, status: 'pending_payment' });
 
-  await prisma.booking.create({
-    data: {
-      studentId: child('Eka'),
-      classId: fractions.id,
-      status: 'cancelled',
-      cancelledReason: 'seat_taken',
-      expiresAt: holdExpiry(now),
-      priceCents: fractions.priceCents,
-      attempts: {
-        create: { outcome: 'failure', reason: 'seat_taken', amountCents: fractions.priceCents },
-      },
-    },
+  // History: a declined card, and a selection that lost the last seat.
+  await book({ parent: parent('parent1@demo.test'), children: ['Bima'], cls: weather, status: 'payment_failed' });
+  await book({
+    parent: parent('parent3@demo.test'),
+    children: ['Eka'],
+    cls: fractions,
+    status: 'cancelled',
+    cancelledReason: 'seat_taken',
   });
 
   console.log('Seeded demo data.\n');
@@ -158,10 +210,11 @@ async function main() {
   console.log(`  password: ${SEED_PASSWORD}\n`);
   console.log('Classes (seats are relative to now, so the demo never goes stale):');
   for (const cls of await prisma.trialClass.findMany({ orderBy: { startsAt: 'asc' } })) {
-    const seats = cls.capacity - cls.confirmedCount;
+    const seats = seatsAvailable(cls);
     console.log(
-      `  ${cls.title.padEnd(28)} starts in ${Math.round((cls.startsAt.getTime() - Date.now()) / DAY)}d  ` +
-        `${cls.confirmedCount}/${cls.capacity} confirmed, ${seats} seat(s) left`,
+      `  ${cls.title.padEnd(28)} $${moneyJson(cls.price).toFixed(2)}  starts in ` +
+        `${Math.round((cls.startsAt.getTime() - Date.now()) / DAY)}d  ` +
+        `${cls.confirmedCount}/${cls.capacity} booked, ${seats} seat(s) left`,
     );
   }
 }

@@ -2,7 +2,14 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { wipeAll } from '../../src/helpers/reset';
 import { loginAs } from '../helpers/api';
 import { createTestApp } from '../helpers/app';
-import { childNamed, createBooking, createClass, createUser, inDays } from '../helpers/fixtures';
+import {
+  childNamed,
+  createBooking,
+  createClass,
+  createUser,
+  inDays,
+  minutesFromNow,
+} from '../helpers/fixtures';
 
 const { db, app, api } = createTestApp();
 
@@ -20,8 +27,8 @@ beforeEach(async () => {
   await createUser(db, { email: 'rizky@test.dev', name: 'Rizky', students: ['Citra'] });
   await createUser(db, { email: 'admin@test.dev', name: 'Admin', role: 'admin' });
 
-  nadiaCookie = await loginAs(app, 'nadia@test.dev');
-  adminCookie = await loginAs(app, 'admin@test.dev');
+  nadiaCookie = await loginAs(db, 'nadia@test.dev');
+  adminCookie = await loginAs(db, 'admin@test.dev');
 });
 
 describe('GET /api/students', () => {
@@ -69,6 +76,40 @@ describe('POST /api/students', () => {
   });
 });
 
+describe('GET /api/students/:id/enrollments', () => {
+  it('lists the classes this child is registered in', async () => {
+    const trialClass = await createClass(db, { title: 'Fractions', startsAt: inDays(9) });
+    const alya = await childNamed(db, 'Alya');
+    await createBooking(db, { studentIds: [alya.id], classId: trialClass.id, status: 'confirmed' });
+
+    const res = await api.get(`/api/students/${alya.id}/enrollments`, nadiaCookie);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.enrollments).toHaveLength(1);
+    expect(body.enrollments[0].class).toMatchObject({ title: 'Fractions', price: 50 });
+    expect(body.enrollments[0].enrolledAt).toMatch(/Z$/);
+  });
+
+  it('is empty for a child who is only holding a selection', async () => {
+    const trialClass = await createClass(db);
+    const alya = await childNamed(db, 'Alya');
+    await createBooking(db, { studentIds: [alya.id], classId: trialClass.id });
+
+    const body = await (await api.get(`/api/students/${alya.id}/enrollments`, nadiaCookie)).json();
+
+    expect(body.enrollments).toEqual([]);
+  });
+
+  it("refuses another parent's child, and unknown ids", async () => {
+    const citra = await childNamed(db, 'Citra');
+
+    expect((await api.get(`/api/students/${citra.id}/enrollments`, nadiaCookie)).status).toBe(403);
+    expect((await api.get('/api/students/child_nope/enrollments', nadiaCookie)).status).toBe(404);
+    expect((await api.get(`/api/students/${citra.id}/enrollments`)).status).toBe(401);
+  });
+});
+
 describe('DELETE /api/students/:id', () => {
   it('soft-deletes the child and hides them from the list', async () => {
     const alya = await childNamed(db, 'Alya');
@@ -104,10 +145,10 @@ describe('DELETE /api/students/:id', () => {
     const alya = await childNamed(db, 'Alya');
     const trialClass = await createClass(db, { startsAt: inDays(7) });
     await createBooking(db, {
-      studentId: alya.id,
+      studentIds: [alya.id],
       classId: trialClass.id,
       status: 'pending_payment',
-      expiresAt: new Date(Date.now() + 10 * 60_000),
+      expiresAt: minutesFromNow(10),
     });
 
     const res = await api.delete(`/api/students/${alya.id}`, nadiaCookie);
@@ -119,7 +160,7 @@ describe('DELETE /api/students/:id', () => {
     const alya = await childNamed(db, 'Alya');
     const trialClass = await createClass(db, { startsAt: inDays(7) });
     await createBooking(db, {
-      studentId: alya.id,
+      studentIds: [alya.id],
       classId: trialClass.id,
       status: 'confirmed',
       confirmedAt: new Date(),
@@ -132,7 +173,7 @@ describe('DELETE /api/students/:id', () => {
     const alya = await childNamed(db, 'Alya');
     const pastClass = await createClass(db, { startsAt: inDays(-3) });
     await createBooking(db, {
-      studentId: alya.id,
+      studentIds: [alya.id],
       classId: pastClass.id,
       status: 'confirmed',
       confirmedAt: inDays(-10),
@@ -145,10 +186,10 @@ describe('DELETE /api/students/:id', () => {
     const alya = await childNamed(db, 'Alya');
     const trialClass = await createClass(db, { startsAt: inDays(7) });
     await createBooking(db, {
-      studentId: alya.id,
+      studentIds: [alya.id],
       classId: trialClass.id,
       status: 'pending_payment',
-      expiresAt: new Date(Date.now() - 60_000),
+      expiresAt: minutesFromNow(-1),
     });
 
     expect((await api.delete(`/api/students/${alya.id}`, nadiaCookie)).status).toBe(204);

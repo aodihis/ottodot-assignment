@@ -1,37 +1,17 @@
 import type { Db } from '../../db';
-import type { TrialClassModel } from '../../generated/prisma/models';
+import { liveHoldItemWhere } from '../../helpers/bookings';
+import { utcNow } from '../../helpers/datetime';
 import { ApiError } from '../../helpers/http';
-import { liveHoldWhere } from '../../helpers/bookings';
-import { cancellationDeadline } from '../../helpers/config';
+import { moneyJson } from '../../helpers/money';
+import { classView } from './classes.view';
 
-/**
- * Holds are soft: a `pending_payment` booking never consumes a seat, so
- * availability is capacity minus confirmed. `pendingHolds` and
- * `cancellationDeadline` are served to parents and admins alike — the parent UI
- * uses them too ("n holds are competing for this seat", "cancel until ...").
- */
-function classView(cls: TrialClassModel, pendingHolds: number) {
-  return {
-    id: cls.id,
-    title: cls.title,
-    subject: cls.subject,
-    startsAt: cls.startsAt,
-    durationMin: cls.durationMin,
-    capacity: cls.capacity,
-    confirmedCount: cls.confirmedCount,
-    pendingHolds,
-    seatsAvailable: Math.max(0, cls.capacity - cls.confirmedCount),
-    priceCents: cls.priceCents,
-    cancellationDeadline: cancellationDeadline(cls.startsAt),
-  };
-}
-
+/** Counts selected-but-unpaid seats per class. */
 async function pendingHoldsByClass(db: Db, classIds: string[], now: Date) {
   if (classIds.length === 0) return new Map<string, number>();
 
-  const rows = await db.booking.groupBy({
+  const rows = await db.bookingItem.groupBy({
     by: ['classId'],
-    where: { classId: { in: classIds }, ...liveHoldWhere(now) },
+    where: { classId: { in: classIds }, ...liveHoldItemWhere(now) },
     _count: { _all: true },
   });
 
@@ -39,15 +19,20 @@ async function pendingHoldsByClass(db: Db, classIds: string[], now: Date) {
 }
 
 export async function listClasses(db: Db) {
-  const now = new Date();
+  const now = utcNow();
   const classes = await db.trialClass.findMany({ orderBy: { startsAt: 'asc' } });
   const holds = await pendingHoldsByClass(db, classes.map((cls) => cls.id), now);
 
   return classes.map((cls) => classView(cls, holds.get(cls.id) ?? 0));
 }
 
+/**
+ * Who is in this class. The roster reads *registrations*, not orders: an
+ * enrollment exists exactly while a child is booked in, so this query no longer
+ * needs to know anything about booking status.
+ */
 export async function classRoster(db: Db, classId: string) {
-  const now = new Date();
+  const now = utcNow();
 
   const cls = await db.trialClass.findUnique({ where: { id: classId } });
   if (!cls) throw new ApiError(404, 'CLASS_NOT_FOUND', 'No such class');
@@ -58,21 +43,21 @@ export async function classRoster(db: Db, classId: string) {
     },
   } as const;
 
-  const [confirmed, pending, cancelled] = await Promise.all([
-    db.booking.findMany({
-      where: { classId, status: 'confirmed' },
-      orderBy: { confirmedAt: 'asc' },
-      include: withStudentAndParent,
+  const [enrolled, pending, refunded] = await Promise.all([
+    db.enrollment.findMany({
+      where: { classId },
+      orderBy: { enrolledAt: 'asc' },
+      include: { ...withStudentAndParent, bookingItem: { select: { bookingId: true } } },
     }),
-    db.booking.findMany({
-      where: { classId, ...liveHoldWhere(now) },
+    db.bookingItem.findMany({
+      where: { classId, ...liveHoldItemWhere(now) },
       orderBy: { createdAt: 'asc' },
-      include: withStudentAndParent,
+      include: { ...withStudentAndParent, booking: { select: { expiresAt: true } } },
     }),
-    // Refunded cancellations stay visible: without them a refunded student
-    // simply vanishes from the only admin view.
-    db.booking.findMany({
-      where: { classId, status: 'cancelled', refundedAt: { not: null } },
+    // Refunded cancellations stay visible: the registration is deleted on refund,
+    // so without this a refunded child simply vanishes from the admin's view.
+    db.bookingItem.findMany({
+      where: { classId, refundedAt: { not: null } },
       orderBy: { refundedAt: 'asc' },
       include: withStudentAndParent,
     }),
@@ -80,25 +65,30 @@ export async function classRoster(db: Db, classId: string) {
 
   return {
     class: classView(cls, pending.length),
-    roster: confirmed.map((booking) => ({
-      bookingId: booking.id,
-      studentId: booking.studentId,
-      name: booking.student.name,
-      parentName: booking.student.parent.user.name,
-      confirmedAt: booking.confirmedAt,
+    roster: enrolled.map((enrollment) => ({
+      enrollmentId: enrollment.id,
+      studentId: enrollment.studentId,
+      name: enrollment.student.name,
+      parentName: enrollment.student.parent.user.name,
+      bookingId: enrollment.bookingItem.bookingId,
+      enrolledAt: enrollment.enrolledAt,
     })),
-    pendingHolds: pending.map((booking) => ({
-      bookingId: booking.id,
-      studentId: booking.studentId,
-      name: booking.student.name,
-      expiresAt: booking.expiresAt,
+    pendingHolds: pending.map((item) => ({
+      itemId: item.id,
+      bookingId: item.bookingId,
+      studentId: item.studentId,
+      name: item.student.name,
+      expiresAt: item.booking.expiresAt,
     })),
-    cancelled: cancelled.map((booking) => ({
-      bookingId: booking.id,
-      studentId: booking.studentId,
-      name: booking.student.name,
-      refundedAt: booking.refundedAt,
-      refundCents: booking.refundCents,
+    // Named for what it holds: only a *refunded* cancellation leaves a row here.
+    // A selection that lapsed or was abandoned unpaid has nothing to show.
+    refunded: refunded.map((item) => ({
+      itemId: item.id,
+      bookingId: item.bookingId,
+      studentId: item.studentId,
+      name: item.student.name,
+      refundedAt: item.refundedAt,
+      refundAmount: item.refundAmount === null ? null : moneyJson(item.refundAmount),
     })),
   };
 }

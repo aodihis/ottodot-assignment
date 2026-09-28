@@ -26,9 +26,18 @@ enum CancelledReason {
   parent_cancelled
 }
 
-enum PaymentOutcome {
-  success
-  failure
+enum PaymentType {
+  charge
+  refund
+}
+
+enum PaymentStatus {
+  succeeded
+  failed
+}
+
+enum PaymentMethod {
+  card
 }
 
 model User {
@@ -46,55 +55,125 @@ model Parent {
   userId   String    @unique
   user     User      @relation(fields: [userId], references: [id])
   students Student[]
+  bookings Booking[]
 }
 
 model Student {
-  id        String    @id @default(cuid())
-  name      String
-  parentId  String
-  removedAt DateTime?
-  parent    Parent    @relation(fields: [parentId], references: [id])
-  bookings  Booking[]
+  id           String        @id @default(cuid())
+  name         String
+  parentId     String
+  removedAt    DateTime?
+  parent       Parent        @relation(fields: [parentId], references: [id])
+  bookings     BookingItem[]
+  enrollments  Enrollment[]
 }
 
 model TrialClass {
-  id             String    @id @default(cuid())
+  id             String        @id @default(cuid())
   title          String
+  description    String?
   subject        String
   startsAt       DateTime
-  durationMin    Int       @default(60)
-  capacity       Int       @default(4)
-  confirmedCount Int       @default(0)
-  priceCents     Int       @default(5000)
-  bookings       Booking[]
+  durationMin    Int           @default(60)
+  capacity       Int           @default(4)
+  /// Denormalised so the capacity check can be one conditional UPDATE, and the
+  /// database can hold a row that cannot describe an impossible state:
+  /// `CHECK (confirmedCount BETWEEN 0 AND capacity)` lives in the migration.
+  confirmedCount Int           @default(0)
+  price          Decimal       @default(50)
+  bookingItems   BookingItem[]
+  enrollments    Enrollment[]
 }
 
+/// The order: one request to book a class for one or more children. Holds the
+/// timer, the stored total, and the customer.
 model Booking {
   id              String           @id @default(cuid())
-  studentId       String
-  classId         String
+  parentId        String
   status          BookingStatus    @default(pending_payment)
+  amount          Decimal
+  currency        String           @default("SGD")
+  /// The hold timer. Availability is capacity minus confirmedCount, and a hold
+  /// never consumes a seat, so this is what "selected" means.
   expiresAt       DateTime
-  priceCents      Int
   cancelledReason CancelledReason?
   confirmedAt     DateTime?
-  refundedAt      DateTime?
-  refundCents     Int?
+  cancelledAt     DateTime?
   createdAt       DateTime         @default(now())
-  student         Student          @relation(fields: [studentId], references: [id])
-  trialClass      TrialClass       @relation(fields: [classId], references: [id])
-  attempts        PaymentAttempt[]
+  parent          Parent           @relation(fields: [parentId], references: [id])
+  items           BookingItem[]
+  payments        Payment[]
 
-  @@index([classId, status])
-  @@index([studentId, status])
+  /// What the sweep and every booking creation filter on. (The parent-scoped
+  /// list a UI will want is not a query yet; it gets its own index when it is.)
+  @@index([status, expiresAt])
 }
 
-model PaymentAttempt {
-  id          String         @id @default(cuid())
-  bookingId   String
-  outcome     PaymentOutcome
-  reason      String?
-  amountCents Int
-  createdAt   DateTime       @default(now())
-  booking     Booking        @relation(fields: [bookingId], references: [id])
+/// A line item: what was bought for one child, and what it cost. It carries no
+/// status of its own — a booking is all-or-nothing, so `Booking.status` is the
+/// state, and `Enrollment` is the registration.
+model BookingItem {
+  id           String      @id @default(cuid())
+  bookingId    String
+  studentId    String
+  classId      String
+  price        Decimal
+  refundedAt   DateTime?
+  /// This child's share of a refund. The refund Payment row is the authoritative
+  /// amount — summing these only equals the booking total because every item in a
+  /// booking shares a class and price.
+  refundAmount Decimal?
+  createdAt    DateTime    @default(now())
+  booking      Booking     @relation(fields: [bookingId], references: [id])
+  student      Student     @relation(fields: [studentId], references: [id])
+  trialClass   TrialClass  @relation(fields: [classId], references: [id])
+  enrollment   Enrollment?
+
+  @@index([classId])
+  @@index([studentId])
+  @@index([bookingId])
+}
+
+/// A child registered in a class. Written when the booking is paid for, deleted
+/// when that booking is cancelled and refunded — so a row here means "this child
+/// is in this class", and the roster is a query about registrations rather than
+/// about orders.
+model Enrollment {
+  id            String      @id @default(cuid())
+  studentId     String
+  classId       String
+  /// Provenance: the line item whose payment created this registration.
+  bookingItemId String      @unique
+  enrolledAt    DateTime    @default(now())
+  student       Student     @relation(fields: [studentId], references: [id])
+  trialClass    TrialClass  @relation(fields: [classId], references: [id])
+  bookingItem   BookingItem @relation(fields: [bookingItemId], references: [id])
+
+  /// At most one registration per child per class — no status predicate needed,
+  /// because a refunded registration is removed rather than marked.
+  @@unique([studentId, classId])
+  /// The roster, the counter invariant and every "who is in this class" lookup.
+  /// The composite above leads with `studentId`, so it cannot serve them.
+  @@index([classId])
+}
+
+/// One row per gateway interaction. Cards are stored masked (`{brand,last4,holder}`),
+/// never a PAN, and `payload` keeps the request/response snapshot out of responses.
+model Payment {
+  id            String        @id @default(cuid())
+  bookingId     String
+  type          PaymentType
+  status        PaymentStatus
+  amount        Decimal
+  currency      String        @default("SGD")
+  method        PaymentMethod @default(card)
+  card          String?
+  reference     String
+  failureReason String?
+  reversalOfId  String?
+  payload       String?
+  createdAt     DateTime      @default(now())
+  booking       Booking       @relation(fields: [bookingId], references: [id])
+
+  @@index([bookingId, status])
 }

@@ -2,7 +2,15 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { wipeAll } from '../../src/helpers/reset';
 import { loginAs } from '../helpers/api';
 import { createTestApp } from '../helpers/app';
-import { childNamed, createBooking, createClass, createUser, DAY, inDays } from '../helpers/fixtures';
+import {
+  childNamed,
+  createBooking,
+  createClass,
+  createUser,
+  DAY,
+  inDays,
+  minutesFromNow,
+} from '../helpers/fixtures';
 
 const { db, app, api } = createTestApp();
 
@@ -19,8 +27,8 @@ beforeEach(async () => {
   await createUser(db, { email: 'nadia@test.dev', name: 'Nadia', students: ['Alya'] });
   await createUser(db, { email: 'admin@test.dev', name: 'Admin', role: 'admin' });
 
-  parentCookie = await loginAs(app, 'nadia@test.dev');
-  adminCookie = await loginAs(app, 'admin@test.dev');
+  parentCookie = await loginAs(db, 'nadia@test.dev');
+  adminCookie = await loginAs(db, 'admin@test.dev');
 });
 
 describe('GET /api/classes', () => {
@@ -28,7 +36,7 @@ describe('GET /api/classes', () => {
     expect((await api.get('/api/classes')).status).toBe(401);
   });
 
-  it('reports seats left, live holds, and the cancellation deadline', async () => {
+  it('reports seats left, live selections, and the cancellation deadline', async () => {
     const startsAt = inDays(9);
     const trialClass = await createClass(db, {
       title: 'Fractions',
@@ -39,21 +47,19 @@ describe('GET /api/classes', () => {
 
     const alya = await childNamed(db, 'Alya');
 
-    // two live holds...
+    // two live selections...
     for (let i = 0; i < 2; i += 1) {
       await createBooking(db, {
-        studentId: alya.id,
+        studentIds: [alya.id],
         classId: trialClass.id,
-        status: 'pending_payment',
-        expiresAt: new Date(Date.now() + 10 * 60_000),
+        expiresAt: minutesFromNow(10),
       });
     }
-    // ...and one that has already lapsed, which must not be counted
+    // ...and one that has lapsed, which must not be counted
     await createBooking(db, {
-      studentId: alya.id,
+      studentIds: [alya.id],
       classId: trialClass.id,
-      status: 'pending_payment',
-      expiresAt: new Date(Date.now() - 60_000),
+      expiresAt: minutesFromNow(-1),
     });
 
     const body = await (await api.get('/api/classes', parentCookie)).json();
@@ -63,6 +69,7 @@ describe('GET /api/classes', () => {
     expect(view.pendingHolds).toBe(2);
     expect(view.confirmedCount).toBe(3);
     expect(view.capacity).toBe(4);
+    expect(view.price).toBe(50);
     expect(new Date(view.cancellationDeadline).toISOString()).toBe(
       new Date(startsAt.getTime() - 5 * DAY).toISOString(),
     );
@@ -91,8 +98,8 @@ describe('GET /api/admin/classes/:id/roster', () => {
     expect((await api.get('/api/admin/classes/nope/roster', adminCookie)).status).toBe(404);
   });
 
-  it('shows the confirmed roster, live holds, and refunded cancellations', async () => {
-    const trialClass = await createClass(db, { title: 'Simple Machines', confirmedCount: 1 });
+  it('shows the booked roster, live selections, and refunded cancellations', async () => {
+    const trialClass = await createClass(db, { title: 'Simple Machines' });
     const alya = await childNamed(db, 'Alya');
     const rizky = await createUser(db, {
       email: 'rizky@test.dev',
@@ -101,25 +108,20 @@ describe('GET /api/admin/classes/:id/roster', () => {
     });
     const citra = rizky.parent!.students[0];
 
+    // A confirmed booking registers the child and takes the seat, in one step.
+    await createBooking(db, { studentIds: [alya.id], classId: trialClass.id, status: 'confirmed' });
     await createBooking(db, {
-      studentId: alya.id,
+      studentIds: [citra.id],
       classId: trialClass.id,
-      status: 'confirmed',
-      confirmedAt: inDays(-1),
+      expiresAt: minutesFromNow(10),
     });
     await createBooking(db, {
-      studentId: citra.id,
-      classId: trialClass.id,
-      status: 'pending_payment',
-      expiresAt: new Date(Date.now() + 10 * 60_000),
-    });
-    await createBooking(db, {
-      studentId: citra.id,
+      studentIds: [citra.id],
       classId: trialClass.id,
       status: 'cancelled',
       cancelledReason: 'parent_cancelled',
       refundedAt: new Date(),
-      refundCents: 5000,
+      refundAmount: 50,
     });
 
     const res = await api.get(`/api/admin/classes/${trialClass.id}/roster`, adminCookie);
@@ -127,10 +129,14 @@ describe('GET /api/admin/classes/:id/roster', () => {
 
     const body = await res.json();
     expect(body.class.title).toBe('Simple Machines');
+    expect(body.class.description).toBeNull();
+    // The roster is a list of registrations, each traceable to its booking.
     expect(body.roster).toHaveLength(1);
     expect(body.roster[0]).toMatchObject({ name: 'Alya', parentName: 'Nadia' });
+    expect(body.roster[0].enrollmentId).toEqual(expect.any(String));
+    expect(body.roster[0].bookingId).toEqual(expect.any(String));
     expect(body.pendingHolds.map((h: { name: string }) => h.name)).toEqual(['Citra']);
-    expect(body.cancelled).toHaveLength(1);
-    expect(body.cancelled[0]).toMatchObject({ name: 'Citra', refundCents: 5000 });
+    expect(body.refunded).toHaveLength(1);
+    expect(body.refunded[0]).toMatchObject({ name: 'Citra', refundAmount: 50 });
   });
 });
