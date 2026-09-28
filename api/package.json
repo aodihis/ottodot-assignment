@@ -8,7 +8,7 @@
     "test:watch": "vitest",
     "postinstall": "prisma generate",
     "sweep": "tsx --env-file=.env src/cli/sweep.ts",
-    "reset": "prisma migrate reset --force",
+    "reset": "prisma migrate reset --force && prisma db seed",
     "seed": "prisma db seed",
     "migrate": "prisma migrate dev",
     "generate": "prisma generate"
