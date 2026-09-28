@@ -192,18 +192,12 @@ and the `npm start` script.
 
 ### Read the important generated code, not all of it
 
-You cannot review everything an AI writes, and skimming all of it catches nothing. The
+We cannot review everything an AI writes, and skimming all of it catches nothing. The
 parts worth reading are the ones where a mistake stays quiet. A bug that throws gets found
 immediately, while a bug that writes the wrong row does not. So the reading went to the
 schema and the migrations, because a wrong constraint or a missing index is invisible at
 runtime, and to the business logic where the concurrency lives, which is the payment
 transaction and the seat helper behind it.
-
-What that produced, as checks rather than opinions. `prisma migrate diff` reports no
-difference, so the hand-written SQL still matches what Prisma expects. The constraints were
-proved by making them bite, since a raw over-capacity update is rejected by the `CHECK` and
-a raw duplicate enrollment throws. `EXPLAIN QUERY PLAN` shows the new index being used
-rather than a scan. Everything else is held by the compiler and the tests.
 
 ### Review the suite, rather than trusting it or writing it
 
