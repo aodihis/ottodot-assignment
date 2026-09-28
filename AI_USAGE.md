@@ -66,8 +66,8 @@ error, because declaring the responses made the compiler check them.
 
 ## Where I disagreed with, corrected, or rejected AI output
 
-These are recorded because they are the honest picture. Several came from me rather than
-from the AI, and the AI had to be corrected rather than the other way round.
+These are recorded because they are the honest picture. Every one of them is a case where
+I rejected or overruled the AI, and the AI was the thing that had to change.
 
 ### 1. The booking design, where `BookingGroup` was rejected for order and line items
 
@@ -154,81 +154,39 @@ against the real build, and the API routes correctly kept winning.
 different container probably."* It was removed, along with the four lines that mounted it
 and the `npm start` script.
 
-That was wasted work and it is worth naming as such. The AI verified it thoroughly
-*before* asking whether it was wanted, and the question belonged in the plan rather than
-after the implementation. What survived is the reasoning about the constraint, which is
-that the SPA and the API meet only at the dev proxy and that this is what keeps requests
-same-origin. That is why there is no CORS middleware and the cookie is `SameSite=Lax`.
-The constraint is now recorded in `CLAUDE.md` for whoever deploys it.
-
-### 6. Claims written down and never checked
-
-The Phase 3 plan asserted that `concurrently` was in the stack table. It was not
-installed and never had been, since root `devDependencies` were `@types/node` and
-`typescript`. The AI had been repeating its own earlier summary as fact.
-
-This one is an argument for the workflow rather than against it. The fix was one check,
-and it was caught because the plan said "verify" for that step. It is still a warning
-about how confidently a summary can become a requirement.
-
-### 7. Fabricated APIs, wrong walkthroughs, and my own mistakes
-
-These are smaller, but the pattern is worth recording. **All of the errors below were
-mine, and were caught by the AI or by running the thing:**
-
-- **An invented function.** The payment screen once called `bookings.holdMinutesFromNow()`,
-  which did not exist and never had. Caught while writing the file, before it ran.
-- **A walkthrough that would have shown the wrong error.** I wrote a README step promising
-  a "not enough seats" refusal when the seeded data would actually have produced
-  `DUPLICATE_ACTIVE_BOOKING`, because Alya already held a seat in that class. Fixed by
-  reading the real enrolments and the check order in the service, which is
-  `bookings.service.ts:217` for duplicates and `:228` for capacity.
-- **A misdiagnosis, twice.** `prisma migrate` failed with `database is locked`. The AI
-  blamed stdin and then invented a concurrent session. The real cause was its own
-  `prisma migrate dev` process, orphaned earlier by a stop that killed the wrapper rather
-  than the child. The lesson is narrow and real, which is that when a tool reports a lock
-  you find the holder instead of reasoning about who might hold it.
-- **`Location.addEventListener` does not exist**, because it is on `window`.
-  `svelte-check` caught it, and the app would have thrown at startup.
-- **A test helper that recorded the wrong thing.** Two tests asserted against `undefined`
-  because the `Call` record omitted the `init` field it was tested through. Those were
-  passing tests for the wrong reason, caught by running them.
-
-### 8. Where the AI was right and I changed my mind
-
-For balance: the red-team pass over the booking design found 13 real findings in Phase 2
-and all were accepted, including that the losing side of a race should carry the *failed*
-charge in its response, so that "you were not charged" is visible rather than asserted.
-The AI also correctly insisted the seat claim happen *after* the order is claimed, so
-nothing is taken for a booking somebody else already paid for. That ordering is the
-difference between a race that resolves and one that double-books.
-
 ## What I would change about the workflow next time
 
-1. **Fix the environment first.** Two rounds were lost to assumptions that cost seconds to
-   check. Port 5173 sits inside a Windows reserved range, which
-   `netsh interface ipv4 show excludedportrange protocol=tcp` shows because Hyper-V held
-   5085 to 5184 on this machine, and Vite 8 needs Node `^20.19`, which is tighter than the
-   "Node 20+" in the notes. Pinning the environment before step one would have caught both.
-2. **Ask for the deployment shape in the plan.** The one-port serving was built, verified
-   and thrown away. "How does this ship?" is one question with a large blast radius, and it
-   belongs with "what are we building" rather than after it.
-3. **Make the seed prove its claims the moment a document makes them.** The guard that
-   fails unless the four demo cases exist should have been written when the README first
-   claimed them. Documentation that nothing checks drifts.
-4. **Do not run two agents on one working tree.** A parallel session caused 25 unrelated
-   tests to fail with `403`, because both runs rebuilt the shared `test.db`, and an
-   unrelated commit absorbed a whole phase's API work because it was sitting uncommitted
-   in the same tree. One writer per repository is a real constraint rather than a
-   preference.
-5. **Show a thin slice sooner.** The first version of the booking flow put booking,
-   payment and status on one scrolling page. That was a defensible reading of "two views,
-   no router", and it was wrong. The fix came only after I saw it. A demo of the flow
-   before the styling would have surfaced the preference earlier.
-6. **Have the AI mark its own uncertainty.** Several wrong claims were stated with full
-   confidence and no signal that they were recall rather than verification. The workable
-   rule is the one in `CLAUDE.md`, which is to read the file or run the command, and
-   otherwise say what is unknown.
+1. **Plan with examples, not only prose.** A plan that shows the shape of the thing, a
+   sample payload or a sketch of a screen, gets followed far more accurately than one that
+   describes it in words. The difference is visible in this repo. Where the plans carried
+   a concrete shape, which is the contract tables in Phases 1 and 2, the implementation
+   matched them with little back and forth. Where they carried a description, which is
+   most of Phase 3, the intent had to be rediscovered during the work.
+2. **Choose the libraries first, and spend longer on the plan.** Stack decisions here were
+   settled early but not exhaustively, and some were still moving while code was being
+   written. The OpenAPI layer arrived a phase after the routes it rewrote, which meant
+   converting four route modules rather than writing them that way once. Picking the
+   libraries up front lets the plans assume the right primitives. The honest constraint is
+   time. With a limited window, planning depth is the first thing to get squeezed, and it
+   is the wrong thing to economise on, because everything after it inherits the mistake.
+3. **Use subagents where the work is genuinely independent.** Several parts of this did not
+   need to be sequential. The API contract could have been pinned while the SPA shell was
+   scaffolded, and the stylesheet written while the last of the tests were. Done properly
+   it would compress the calendar time, and that is the axis a limited window actually
+   constrains. One constraint learned the hard way: **one writer per repository**. Two
+   agents on this working tree caused 25 unrelated tests to fail with `403`, because both
+   runs rebuilt the shared `test.db`, and an uncommitted phase was absorbed into an
+   unrelated commit. Parallel agents want isolated worktrees, or at least disjoint files.
+4. **Triage into smaller tasks.** A phase here was sometimes a day's worth of work planned
+   as one unit, which makes a wrong plan expensive, because the mistake is discovered late
+   and the rework is large. Smaller tasks mean smaller plans, and a wrong plan costs less.
+5. **Write the scope properly, and gate quality on a number.** The scope that existed was a
+   brief rather than a specification, and quality was judged by review rather than
+   measured. Adding coverage tooling with a threshold, for which Vitest's v8 provider is
+   the right instrument here (the equivalent of `llvm-cov` for a JavaScript project), and
+   using AI to close the remaining gap, would make "tested" a figure of at least 80 percent
+   rather than an impression. The same applies to a lint and format gate, which this repo
+   notes as not yet configured.
 
 ## How I verified the final implementation
 
