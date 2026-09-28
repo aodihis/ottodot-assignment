@@ -195,6 +195,13 @@ would break both, and would need a reverse proxy or CORS-with-credentials.
 - **Class management.** No updating a class, no adding details to one, no teacher
   assignment, no closing enrolment.
 - **Caching**, at any layer.
+- **Logging.** No logger library and no request logging — the only output is
+  `console.error` for an unhandled error (`api/src/app.ts`), plus the startup and
+  CLI lines. No levels, no request ids, and nothing that ties the calls touching one
+  booking together, which is exactly what you want when a race has to be
+  reconstructed after the fact. The app's own errors are mapped to the right status
+  and returned in the envelope, so nothing is *lost* — it just is not recorded.
+- **Observability** beyond that: no metrics, no tracing, no health endpoint.
 - Also out of scope: background/scheduled expiry (lazy + sweep instead), baskets
   across multiple classes, partial cancellation of one child out of an order,
   pagination, a component library, animations, end-to-end browser tests in CI, and
@@ -221,26 +228,35 @@ would break both, and would need a reverse proxy or CORS-with-credentials.
 7. **5xx and 401/403 rates by route.** A `FORBIDDEN` spike usually means the frontend
    is asking for something the session cannot do.
 
+Most of the above needs something this build does not have: **structured request
+logs with a request id**, so one booking can be followed across the calls that
+touched it. Until that exists, a race can only be inferred from counters rather
+than read from a log — which is why it is the first item under "next" below.
+
 ## What I would do next with more time
 
-1. **A background expiry job**, so expiry does not depend on someone visiting —
+1. **Structured logging**, with a request id threaded through the booking
+   transaction. Every question in the section above is easier to answer with it, and
+   reconstructing a lost race without it means inferring from counters. It is the
+   cheapest of these to add and the one that makes the rest observable.
+2. **A background expiry job**, so expiry does not depend on someone visiting —
    `sweep` already exists to be its body.
-2. **A real payment integration** with webhook reconciliation, which changes the
+3. **A real payment integration** with webhook reconciliation, which changes the
    confirm path from one transaction into something that must tolerate arriving
    twice.
-3. **A Playwright test of the race in two browser contexts.** The invariant is proved
+4. **A Playwright test of the race in two browser contexts.** The invariant is proved
    at the API level today; this would prove the *experience* of losing, which is what
    a human is asked to judge.
-4. **Show a child's enrolled classes in the UI.** `GET /api/students/:id/enrollments`
+5. **Show a child's enrolled classes in the UI.** `GET /api/students/:id/enrollments`
    exists and nothing consumes it.
-5. **Partial cancellation** — pull one child out of a multi-child order. The model
+6. **Partial cancellation** — pull one child out of a multi-child order. The model
    supports it; the order's all-or-nothing state is what blocks it.
-6. **Class management** — create and edit classes, assign a teacher.
-7. **A generated API client** from the OpenAPI document, replacing the hand-kept
+7. **Class management** — create and edit classes, assign a teacher.
+8. **A generated API client** from the OpenAPI document, replacing the hand-kept
    types in `web/src/lib/types.ts`.
-8. **Auth and security hardening** — verification, reset, rate limiting, CSRF.
-9. **Deployment** — a container each behind a reverse proxy, which is also what
-   resolves the cookie/CORS constraint.
+9. **Auth and security hardening** — verification, reset, rate limiting, CSRF.
+10. **Deployment** — a container each behind a reverse proxy, which is also what
+    resolves the cookie/CORS constraint.
 
 See `AI_USAGE.md` for how this was built with AI, where it was corrected, and how the
 result was verified.
