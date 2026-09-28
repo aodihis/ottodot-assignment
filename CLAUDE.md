@@ -21,16 +21,21 @@ Every non-trivial task starts with planning, before any code is written.
 </plan-workflow>
 
 <commands>
-- `npm install` — install everything (npm workspaces: root + `api/`)
-- `npm run dev` — run the API on http://localhost:3000
-- `npm test` — the whole Vitest suite (`tests/unit`, `tests/integration`)
-- `npm test -- tests/integration/auth.test.ts` — one test file (paths are relative to `api/`)
-- `npm run typecheck` — `tsc --noEmit`
+- `npm install` — install everything (npm workspaces: root + `api/` + `web/`)
+- `npm run dev` — the API on http://localhost:3000 **and** the SPA on http://localhost:4173 (one command; the SPA proxies `/api` to the API, so everything is same-origin and the session cookie works with no CORS)
+- `npm run dev:api` / `npm run dev:web` — either half on its own
+- `npm run build` — build the SPA into `web/dist`
+- `npm start` — build the SPA, then run the API, which serves `web/dist` too (the whole demo on :3000). The SPA is only mounted when `web/dist` exists
+- `npm test` — both Vitest suites: the API (`api/tests/{unit,integration}`), then the web (`web/tests/{unit,integration}`)
+- `npm test -- tests/integration/auth.test.ts` — one API test file (paths are relative to `api/`)
+- `npm run typecheck` — `tsc --noEmit` for the API, then `svelte-check` for the web (Svelte components are not `tsc`-checkable)
 - `npm run migrate -- --name <name>` — create and apply a Prisma migration
 - `npm run seed` — reseed the dev database
 - `npm run sweep` — release lapsed seat selections (the hold timer's counterpart; safe to re-run, and cron-able)
 - `npm run reset` — drop, migrate, and reseed the dev database (the script chains `prisma db seed` explicitly, because Prisma 7 no longer seeds on reset — a bare `migrate reset` leaves an empty database). Prisma refuses this when an agent runs it: ask the user to run it (applying a migration with `npm run migrate` is not blocked)
+- `GET /scalar` — the browsable API reference; `GET /doc` — the OpenAPI document behind it. Served by `npm run dev` at http://localhost:3000/scalar. Both are unauthenticated, and both are unmounted (404) unless `NODE_ENV` is `development` or `test` — see `docsEnabled()` in `api/src/helpers/config.ts`.
 - Lint: not configured yet.
+- One test run at a time: `api/tests/helpers/globalSetup.ts` deletes and rebuilds the single `api/prisma/test.db`, so two concurrent `npm test` runs make each other's tests fail (typically as unexplained 401/403s). Re-run rather than debug.
 </commands>
 
 <coding-guidelines>
@@ -41,6 +46,8 @@ Every non-trivial task starts with planning, before any code is written.
 - Logic meant to be used across modules goes in `helpers/` for reusability (e.g., hash generate/verify, the "this parent's non-removed children" filter), not inside one module.
 - Tests live in the workspace they belong to, outside `src/`: `api/tests/unit`, `api/tests/integration` (the web app gets its own tests later).
 - Every function and every flow gets test cases. A function without a test is not done.
+- Routes are declared with `createRoute` + `app.openapi()`, never a plain `app.get()`: the declaration is what puts the operation in the reference at `/scalar`, and it type-checks the handler's return against the response schema. `api/tests/integration/docs.test.ts` is the guard — it fails on an operation that is undocumented or missing.
+- Pass the status code to every `c.json()` inside an `openapi()` handler, `200` included. Without it the return type widens to every status the route declares and stops type-checking.
 </coding-guidelines>
 
 <development-order>

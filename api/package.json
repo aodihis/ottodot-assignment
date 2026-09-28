@@ -15,8 +15,10 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
+    "@hono/zod-openapi": "^1.6.3",
     "@prisma/adapter-better-sqlite3": "^7.10.0",
     "@prisma/client": "^7.10.0",
+    "@scalar/hono-api-reference": "^0.12.6",
     "hash-wasm": "^4.12.0",
     "hono": "^4.13.9",
     "zod": "^4.6.5"

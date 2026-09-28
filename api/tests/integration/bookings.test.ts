@@ -556,6 +556,74 @@ describe('POST /api/bookings/:id/cancel', () => {
   });
 });
 
+describe('GET /api/bookings', () => {
+  it('lists this parent’s bookings, newest first', async () => {
+    const classes = [await createClass(db), await createClass(db), await createClass(db)];
+
+    const created: string[] = [];
+    for (const trialClass of classes) {
+      const { body } = await book([alyaId], trialClass.id);
+      created.push(body.booking.id);
+    }
+
+    // Explicit instants rather than three `now()`s: bookings made in a row can share
+    // a millisecond, and then the list falls back to its id tiebreaker — which is
+    // not the ordering this test is about.
+    const [oldest, middle, newest] = created;
+    await db.booking.update({ where: { id: oldest }, data: { createdAt: minutesFromNow(-30) } });
+    await db.booking.update({ where: { id: middle }, data: { createdAt: minutesFromNow(-15) } });
+    await db.booking.update({ where: { id: newest }, data: { createdAt: minutesFromNow(-1) } });
+
+    const res = await api.get('/api/bookings', nadiaCookie);
+    expect(res.status).toBe(200);
+
+    const { bookings } = await res.json();
+    expect(bookings.map((booking: { id: string }) => booking.id)).toEqual([newest, middle, oldest]);
+  });
+
+  it('serves each booking in the same shape as reading it on its own', async () => {
+    const trialClass = await createClass(db);
+    const { body } = await book([alyaId, bimaId], trialClass.id);
+
+    const { bookings } = await (await api.get('/api/bookings', nadiaCookie)).json();
+    const one = await (await api.get(`/api/bookings/${body.booking.id}`, nadiaCookie)).json();
+
+    // The list is not a summary: it is the same `bookingView`, so a screen that can
+    // render one booking can render every one of them.
+    expect(bookings).toEqual([one.booking]);
+  });
+
+  it('shows a parent only their own bookings', async () => {
+    const trialClass = await createClass(db);
+    const { body: nadias } = await book([alyaId], trialClass.id);
+    const { body: rizkys } = await book([citraId], trialClass.id, rizkyCookie);
+
+    const { bookings } = await (await api.get('/api/bookings', rizkyCookie)).json();
+
+    expect(bookings.map((booking: { id: string }) => booking.id)).toEqual([rizkys.booking.id]);
+    expect(bookings.map((booking: { id: string }) => booking.id)).not.toContain(nadias.booking.id);
+  });
+
+  it('answers an empty list, not a 404, for a parent who has booked nothing', async () => {
+    const res = await api.get('/api/bookings', rizkyCookie);
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).bookings).toEqual([]);
+  });
+
+  it('retires a lapsed hold before listing it, so nothing is shown as still payable', async () => {
+    const trialClass = await createClass(db);
+    const { body } = await book([alyaId], trialClass.id);
+    await db.booking.update({ where: { id: body.booking.id }, data: { expiresAt: minutesFromNow(-1) } });
+
+    const { bookings } = await (await api.get('/api/bookings', nadiaCookie)).json();
+    const listed = bookings.find((booking: { id: string }) => booking.id === body.booking.id);
+
+    expect(listed.status).toBe('cancelled');
+    expect(listed.cancelledReason).toBe('expired');
+  });
+});
+
 describe('GET /api/bookings/:id', () => {
   it('requires a session on the collection as well as on one booking', async () => {
     const trialClass = await createClass(db);
@@ -563,6 +631,7 @@ describe('GET /api/bookings/:id', () => {
     // The collection matters: the parent gate is mounted on `/bookings/*`, which
     // is also what covers the bare path.
     expect((await api.post('/api/bookings', { classId: trialClass.id, studentIds: [alyaId] })).status).toBe(401);
+    expect((await api.get('/api/bookings')).status).toBe(401);
     expect((await api.get('/api/bookings/whatever')).status).toBe(401);
   });
 

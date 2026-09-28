@@ -12,6 +12,9 @@ export default defineConfig({
     hookTimeout: 60_000,
     env: {
       SESSION_SECRET: 'test-secret',
+      // `docsEnabled()` fails closed, so the docs tests need this to see the
+      // reference at all. Stated rather than relying on vitest's default.
+      NODE_ENV: 'test',
     },
   },
 });

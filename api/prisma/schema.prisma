@@ -104,9 +104,11 @@ model Booking {
   items           BookingItem[]
   payments        Payment[]
 
-  /// What the sweep and every booking creation filter on. (The parent-scoped
-  /// list a UI will want is not a query yet; it gets its own index when it is.)
+  /// What the sweep and every booking creation filter on, and what the
+  /// parent-scoped booking list reads — that query is `parentId` equality with
+  /// `createdAt` descending, which is why it has an index of its own.
   @@index([status, expiresAt])
+  @@index([parentId, createdAt])
 }
 
 /// A line item: what was bought for one child, and what it cost. It carries no

@@ -1,3 +1,12 @@
+import { z } from '@hono/zod-openapi';
+
+/**
+ * A child as the API reports them — the `{id, name}` every endpoint that
+ * mentions one selects. Shared here rather than declared per module because the
+ * auth module's `/me` and the students module both serve it.
+ */
+export const StudentRefSchema = z.object({ id: z.string(), name: z.string() });
+
 /**
  * Children are soft-deleted (`Student.removedAt`), so every lookup of "this
  * parent's children" must exclude removed rows — a missed filter would let a

@@ -295,6 +295,28 @@ export function getBooking(db: Db, bookingId: string, parentId: string) {
   return ownedBooking(db, bookingId, parentId);
 }
 
+/**
+ * This parent's orders, newest first — the screen that shows a booking's status,
+ * its hold timer and its refund history.
+ *
+ * Housekeeping runs first for the same reason `createBooking` runs it: a selection
+ * that has already lapsed must not be listed as if it were still waiting for
+ * payment. The client cannot tell a lapsed hold from a live one otherwise, and it
+ * is the client that decides whether to offer the pay button. `expireHolds` is
+ * idempotent, so a read that sweeps is still safe to repeat.
+ */
+export async function listBookings(db: Db, parentId: string) {
+  await expireHolds(db);
+
+  return db.booking.findMany({
+    where: { parentId },
+    // `id` breaks the tie: `createdAt` is stored at millisecond granularity, so two
+    // orders placed in the same tick would otherwise come back in an arbitrary order.
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    include: bookingInclude,
+  });
+}
+
 /** The charge that made this booking paid, if any. */
 export function settledCharge(booking: BookingWithRelations) {
   return (

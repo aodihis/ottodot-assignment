@@ -42,6 +42,23 @@ export function cancellationDeadline(startsAt: Date): Date {
   return new Date(startsAt.getTime() - cancellationCutoffDays() * 86_400_000);
 }
 
+/** The environments that serve the API reference. Anything else, including unset. */
+const DOCS_ENVIRONMENTS = ['development', 'test'];
+
+/**
+ * Whether the API reference (`/scalar`, and the document behind it at `/doc`) is
+ * served. It is a complete map of the API surface — every route, every request
+ * and response shape, and the session scheme — so it is served only where it is
+ * meant to be.
+ *
+ * Fails closed, like `sessionSecret` below and for the same reason: an unset or
+ * misspelled NODE_ENV must not be what quietly publishes the API. Read at call
+ * time, so a test can drive either side without restarting the process.
+ */
+export function docsEnabled(): boolean {
+  return DOCS_ENVIRONMENTS.includes(process.env.NODE_ENV ?? '');
+}
+
 /**
  * The session signing key. Deliberately fails closed: a fallback constant would
  * be published in this repository, so a server that booted without a configured

@@ -4,7 +4,13 @@
  * a caller cannot declare that a charge succeeded.
  */
 
-export type CardBrand = 'visa' | 'mastercard' | 'amex' | 'discover' | 'unknown';
+/**
+ * The brands `brandOf` can report. A tuple rather than a bare union so the API
+ * contract can derive its enum from the same list the classifier does.
+ */
+export const CARD_BRANDS = ['visa', 'mastercard', 'amex', 'discover', 'unknown'] as const;
+
+export type CardBrand = (typeof CARD_BRANDS)[number];
 
 export type MaskedCard = { brand: CardBrand; last4: string; holder?: string };
 

@@ -1,7 +1,33 @@
+import { z } from '@hono/zod-openapi';
 import type { TrialClass } from '../../generated/prisma/client';
 import { cancellationDeadline } from '../../helpers/config';
 import { moneyJson } from '../../helpers/money';
 import { seatsAvailable } from '../../helpers/seats';
+
+/**
+ * The class payload as a schema, next to the function that builds it and for the
+ * same reason: the students module serves it too. Dates are `z.date()` because
+ * that is what `classView` returns; the document renders them as
+ * `string`/`date-time`, which is what actually goes over the wire.
+ */
+export const ClassSummarySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  subject: z.string(),
+  startsAt: z.date(),
+  durationMin: z.number().int(),
+  price: z.number(),
+});
+
+/** The full class payload — the summary plus what the seats and the timer add. */
+export const ClassViewSchema = ClassSummarySchema.extend({
+  capacity: z.number().int(),
+  confirmedCount: z.number().int(),
+  pendingHolds: z.number().int(),
+  seatsAvailable: z.number().int(),
+  cancellationDeadline: z.date(),
+}).openapi('ClassView');
 
 /**
  * The class payload, shared by the classes endpoints and by the students module's

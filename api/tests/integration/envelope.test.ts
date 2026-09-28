@@ -49,6 +49,7 @@ describe('every response uses the same envelope', () => {
       ['GET /api/classes', 200, await api.get('/api/classes', parentCookie)],
       ['GET /api/admin/classes', 200, await api.get('/api/admin/classes', adminCookie)],
       ['GET /api/admin/classes/:id/roster', 200, await api.get(`/api/admin/classes/${trialClass.id}/roster`, adminCookie)],
+      ['GET /api/bookings', 200, await api.get('/api/bookings', parentCookie)],
       ['GET /api/bookings/:id', 200, await api.get(`/api/bookings/${createdBody.booking.id}`, parentCookie)],
     ];
 
@@ -108,6 +109,20 @@ describe('every response uses the same envelope', () => {
 
     expect(res.status).toBe(400);
     expect(body.error.code).toBe('MALFORMED_JSON');
+  });
+
+  it('answers a body sent without a JSON content type as a client error too', async () => {
+    // Routes no longer read the body themselves — the request validator does, and
+    // it refuses to guess at a media type it was not told.
+    const res = await app.request('/api/students', {
+      method: 'POST',
+      headers: { cookie: parentCookie },
+      body: JSON.stringify({ name: 'Bima' }),
+    });
+    const body = (await res.json()) as { error: { code: string } };
+
+    expect(res.status).toBe(415);
+    expect(body.error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
   });
 
   it('carries validation detail without hiding it behind the code', async () => {
