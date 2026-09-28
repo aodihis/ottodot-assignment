@@ -126,6 +126,29 @@ all-or-nothing, one payment per order, and the group race consequences of the mo
 rather than rules to remember. `TrialClass.confirmedCount` is a denormalised counter,
 not the truth; the roster is.
 
+```
+User ─1:1─ Parent
+              ├─1:N─ Student
+              │
+              └─1:N─ Booking                    the order: customer, timer, total, status
+                        │
+                        ├─1:N─ BookingItem ──N:1── TrialClass
+                        │          │
+                        │          └─1:1─ Enrollment ──N:1──► TrialClass
+                        │                the registration: "this child is in this class"
+                        │
+                        └─1:N─ Payment           charges and refunds for the order
+```
+
+Both the line and the registration point at `TrialClass`, and that is the design:
+the line records what was **sold**, the registration records what the child is
+**in**. One is a commercial fact about an order, the other is the roster — keeping
+them separate is why "all the classes this child is registered for" is answerable
+without going through bookings.
+
+Not drawn, to keep it readable: `Student` is the other side of *both* `BookingItem`
+and `Enrollment`, so a child holds their own lines and their own registrations.
+
 **Four booking statuses.** `pending_payment` (held, no seat taken), `confirmed`
 (paid, one enrollment per line), `payment_failed` (nothing registered), `cancelled`
 (carrying a reason: `expired`, `seat_taken`, `duplicate_booking`,
